@@ -174,7 +174,7 @@ def finetune_paraphrase_detection(args):
 
     print("Training finished.")
 
-    accuracy, matthews_corr = evaluate_model(model, train_data, device)
+    accuracy, matthews_corr = evaluate_model(model, dev_data, device)
     print(f"The accuracy of the model is: {accuracy:.3f}")
     print(f"Matthews Correlation Coefficient of the model is: {matthews_corr:.3f}")
 
