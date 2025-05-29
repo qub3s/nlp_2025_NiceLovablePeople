@@ -114,8 +114,8 @@ class MultitaskBERT(nn.Module):
     ):
         """
         Given a batch of pairs of sentences, outputs logits for detecting the paraphrase types.
-        There are 7 different types of paraphrases.
-        Thus, your output should contain 7 unnormalized logits for each sentence. It will be passed to the sigmoid function
+        There are 26 different types of paraphrases.
+        Thus, your output should contain 26 unnormalized logits for each sentence. It will be passed to the sigmoid function
         during evaluation, and handled as a logit by the appropriate loss function.
         Dataset: ETPC
         """
