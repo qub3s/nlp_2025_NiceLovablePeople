@@ -19,7 +19,7 @@ class BartWithClassifier(nn.Module):
     def __init__(self, num_labels=26):
         super(BartWithClassifier, self).__init__()
 
-        self.bart = BartModel.from_pretrained("facebook/bart-large", local_files_only=True)
+        self.bart = BartModel.from_pretrained("facebook/bart-large", local_files_only=False)
         self.classifier = nn.Linear(self.bart.config.hidden_size, num_labels)
         self.sigmoid = nn.Sigmoid()
 
@@ -59,6 +59,34 @@ def transform_data(dataset, max_length=512):
     Return a DataLoader with the TensorDataset. You can choose a batch size of your
     choice.
     """
+
+    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", add_prefix_space=True)
+
+    s1 = list(dataset["sentence1_tokenized"].apply(eval))
+
+    s1_token = tokenizer(s1, is_split_into_words=True)
+
+    s1_atm = s1_token["attention_mask"]
+    s1_inp_id = s1_token["input_ids"]
+
+    para_ids = list(dataset["paraphrase_type_ids"].apply(eval))
+
+    mask = torch.full( (32,), True)
+    mask[[0, 12, 19, 20, 23, 27]] = False
+
+    one_hot = []
+
+    for x in para_ids:
+        oh = nn.functional.one_hot(torch.tensor(x), 32)
+        oh = oh[:, mask]
+        oh = torch.any(oh, dim=0)
+        one_hot.append(oh)
+        
+    print(one_hot[0])
+
+
+    #dataset = TensorDataset(inps, tgts)
+
     raise NotImplementedError
 
 
@@ -75,8 +103,6 @@ def train_model(model, train_data, dev_data, device):
     """
     ### TODO
     raise NotImplementedError
-
-
 
 def test_model(model, test_data, test_ids, device):
     """
