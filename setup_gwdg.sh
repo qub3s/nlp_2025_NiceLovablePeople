@@ -53,7 +53,6 @@ conda install -y tqdm==4.66.2 requests==2.31.0 transformers==4.38.2 tensorboard=
 pip install explainaboard-client==0.1.4 sacrebleu==2.4.0 scikit_learn==1.6.1
 
 # Download model on login-node
-
 python - <<EOF
 from transformers import BertTokenizer, BertModel
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
