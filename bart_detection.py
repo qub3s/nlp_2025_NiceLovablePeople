@@ -15,6 +15,8 @@ from optimizer import AdamW
 
 TQDM_DISABLE = False
 
+batch_size = 1
+
 
 class BartWithClassifier(nn.Module):
     def __init__(self, num_labels=26):
@@ -60,6 +62,7 @@ def transform_data(dataset, max_length=512):
     Return a DataLoader with the TensorDataset. You can choose a batch size of your
     choice.
     """
+    #raise NotImplementedError
 
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", add_prefix_space=True)
 
@@ -92,16 +95,15 @@ def transform_data(dataset, max_length=512):
         one_hot = torch.stack(one_hot)
 
         ds = TensorDataset(s1_inp_id, s1_atm, one_hot)
-        dl = DataLoader(ds, batch_size = 1, shuffle=True)
+        dl = DataLoader(ds, batch_size = batch_size, shuffle=True)
     else:
         ds = TensorDataset(s1_inp_id, s1_atm)
         dl = DataLoader(ds, batch_size = 64, shuffle=True)
 
     return dl 
-    #raise NotImplementedError
 
 
-def train_model(model, train_data, dev_data, device, epochs=1, lr=0.01):
+def train_model(model, train_data, dev_data, device, epochs=5, lr=0.01):
     """
     Train the model. You can use any training loop you want. We recommend starting with
     AdamW as your optimizer. You can take a look at the SST training loop for reference.
@@ -113,58 +115,59 @@ def train_model(model, train_data, dev_data, device, epochs=1, lr=0.01):
     Return the trained model.
     """
     ### TODO
+    #raise NotImplementedError
 
     optimizer = AdamW(model.parameters(), lr=lr)
+    loss_fn = nn.BCEWithLogitsLoss()
     model.to(device)
 
     for epoch in range(epochs):
         model.train()
         train_loss = 0
         dev_loss = 0
-        num_batches = 0
+        num_batches_train = 0
+        num_batches_dev = 0
 
         for batch in tqdm(
             train_data, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
         ):
             X1, X1M, Y = batch
-            X1.to(device)
-            X1M.to(device)
-            Y.to(device)
+
+            X1 = X1.to(device)
+            X1M = X1M.to(device)
+            Y = Y.to(device)
 
             optimizer.zero_grad()
             pred = model(X1, X1M)
             
-            loss = nn.functional.cross_entropy(pred, Y.to(torch.float32))
+            loss = loss_fn(pred, Y.to(torch.float32))
+            loss.backward()
             optimizer.step()
 
             train_loss += loss.item()
-            num_batches += 1
-            break;
+            num_batches_train += 1
 
         model.eval()
-        num_batches = 0
 
         for batch in tqdm(
             dev_data, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
         ):
             X1, X1M, Y = batch
-            X1.to(device)
-            X1M.to(device)
-            Y.to(device)
 
+            X1 = X1.to(device)
+            X1M = X1M.to(device)
+            Y = Y.to(device)
 
             with torch.no_grad():
                 pred = model(X1, X1M)
-                loss = nn.functional.cross_entropy(pred, Y.to(torch.float32))
+                loss = loss_fn(pred, Y.to(torch.float32))
 
             dev_loss += loss.item()
-            num_batches += 1
-            break;
+            num_batches_dev += 1
 
-        print("Train Loss: ",train_loss)
-        print("Validation Loss: ",dev_loss)
+        print("Train Loss: ",train_loss/batch_size/num_batches_train)
+        print("Validation Loss: ",dev_loss/batch_size/num_batches_dev)
 
-    #raise NotImplementedError
     return model
 
 def test_model(model, test_data, test_ids, device):
@@ -175,9 +178,29 @@ def test_model(model, test_data, test_ids, device):
     Return this dataframe.
     """
     ### TODO
+    #raise NotImplementedError
 
-    raise NotImplementedError
+    model.to(device)
+    model.eval()
 
+    df = pd.DataFrame(columns=['id', 'Predicted_Paraphrase_Types'])
+
+    for data, ids in zip(test_data, test_ids):
+        print(df)
+        X1, X1M = data 
+
+        X1 = X1.to(device)
+        X1M = X1M.to(device)
+
+        with torch.no_grad():
+            pred = model(X1, X1M)
+
+        i = len(df)
+        df.loc[i, 'id'] = ids
+        df.loc[i, 'Predicted_Paraphrase_Types'] = pred 
+
+    print(df)
+    return df
 
 def evaluate_model(model, test_data, device):
     """
@@ -263,13 +286,14 @@ def finetune_paraphrase_detection(args):
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    model = train_model(model, train_data, dev_data, device)
+    #model = train_model(model, train_data, dev_data, device)
 
-    print("Training finished.")
+    #print("Training finished.")
 
-    accuracy, matthews_corr = evaluate_model(model, dev_data, device)
-    print(f"The accuracy of the model is: {accuracy:.3f}")
-    print(f"Matthews Correlation Coefficient of the model is: {matthews_corr:.3f}")
+    
+    #accuracy, matthews_corr = evaluate_model(model, dev_data, device)
+    #print(f"The accuracy of the model is: {accuracy:.3f}")
+    #print(f"Matthews Correlation Coefficient of the model is: {matthews_corr:.3f}")
 
     test_ids = test_dataset["id"]
     test_results = test_model(model, test_data, test_ids, device)
