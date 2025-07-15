@@ -4,6 +4,7 @@ import random
 import numpy as np
 import pandas as pd
 import torch
+import sklearn
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
@@ -63,34 +64,44 @@ def transform_data(dataset, max_length=512):
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", add_prefix_space=True)
 
     s1 = list(dataset["sentence1_tokenized"].apply(eval))
+    s1 = list(dataset["sentence2_tokenized"].apply(eval))
 
-    s1_token = tokenizer(s1, is_split_into_words=True)
+    s1_token = tokenizer(s1, is_split_into_words=True, return_tensors="pt", padding=True)
+    s2_token = tokenizer(s1, is_split_into_words=True, return_tensors="pt", padding=True)
 
     s1_atm = s1_token["attention_mask"]
     s1_inp_id = s1_token["input_ids"]
 
-    para_ids = list(dataset["paraphrase_type_ids"].apply(eval))
+    s2_atm = s2_token["attention_mask"]
+    s2_inp_id = s2_token["input_ids"]
 
-    mask = torch.full( (32,), True)
-    mask[[0, 12, 19, 20, 23, 27]] = False
+    if("paraphrase_type_ids" in dataset.keys()):
+        para_ids = list(dataset["paraphrase_type_ids"].apply(eval))
 
-    one_hot = []
+        mask = torch.full( (32,), True)
+        mask[[0, 12, 19, 20, 23, 27]] = False
 
-    for x in para_ids:
-        oh = nn.functional.one_hot(torch.tensor(x), 32)
-        oh = oh[:, mask]
-        oh = torch.any(oh, dim=0)
-        one_hot.append(oh)
+        one_hot = []
+
+        for x in para_ids:
+            oh = nn.functional.one_hot(torch.tensor(x), 32)
+            oh = oh[:, mask]
+            oh = torch.any(oh, dim=0)
+            one_hot.append(oh)
         
-    print(one_hot[0])
+        one_hot = torch.stack(one_hot)
+
+        ds = TensorDataset(s1_inp_id, s1_atm, one_hot)
+        dl = DataLoader(ds, batch_size = 1, shuffle=True)
+    else:
+        ds = TensorDataset(s1_inp_id, s1_atm)
+        dl = DataLoader(ds, batch_size = 64, shuffle=True)
+
+    return dl 
+    #raise NotImplementedError
 
 
-    #dataset = TensorDataset(inps, tgts)
-
-    raise NotImplementedError
-
-
-def train_model(model, train_data, dev_data, device):
+def train_model(model, train_data, dev_data, device, epochs=1, lr=0.01):
     """
     Train the model. You can use any training loop you want. We recommend starting with
     AdamW as your optimizer. You can take a look at the SST training loop for reference.
@@ -102,7 +113,59 @@ def train_model(model, train_data, dev_data, device):
     Return the trained model.
     """
     ### TODO
-    raise NotImplementedError
+
+    optimizer = AdamW(model.parameters(), lr=lr)
+    model.to(device)
+
+    for epoch in range(epochs):
+        model.train()
+        train_loss = 0
+        dev_loss = 0
+        num_batches = 0
+
+        for batch in tqdm(
+            train_data, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
+        ):
+            X1, X1M, Y = batch
+            X1.to(device)
+            X1M.to(device)
+            Y.to(device)
+
+            optimizer.zero_grad()
+            pred = model(X1, X1M)
+            
+            loss = nn.functional.cross_entropy(pred, Y.to(torch.float32))
+            optimizer.step()
+
+            train_loss += loss.item()
+            num_batches += 1
+            break;
+
+        model.eval()
+        num_batches = 0
+
+        for batch in tqdm(
+            dev_data, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
+        ):
+            X1, X1M, Y = batch
+            X1.to(device)
+            X1M.to(device)
+            Y.to(device)
+
+
+            with torch.no_grad():
+                pred = model(X1, X1M)
+                loss = nn.functional.cross_entropy(pred, Y.to(torch.float32))
+
+            dev_loss += loss.item()
+            num_batches += 1
+            break;
+
+        print("Train Loss: ",train_loss)
+        print("Validation Loss: ",dev_loss)
+
+    #raise NotImplementedError
+    return model
 
 def test_model(model, test_data, test_ids, device):
     """
@@ -188,10 +251,14 @@ def finetune_paraphrase_detection(args):
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv")
     test_dataset = pd.read_csv("data/etpc-paraphrase-detection-test-student.csv")
+    
 
     # TODO You might do a split of the train data into train/validation set here
     # (or in the csv files directly)
-    train_data = transform_data(train_dataset)
+    train_ds, val_ds = sklearn.model_selection.train_test_split(train_dataset, test_size=0.2)
+    
+    train_data = transform_data(train_ds)
+    dev_data = transform_data(val_ds)
     test_data = transform_data(test_dataset)
 
     print(f"Loaded {len(train_dataset)} training samples.")
