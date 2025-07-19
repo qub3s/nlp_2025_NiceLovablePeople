@@ -91,7 +91,7 @@ class AdamW(Optimizer):
                     alpha = alpha * math.sqrt(1-beta2**state["step"])/(1-beta1**state["step"])
 
                 # 3 
-                p.data = p.data - alphat * m/(torch.sqrt(v) + epsilon)
+                p.data = p.data - alpha * state["first_moment"]/(torch.sqrt(state["second_moment"]) + epsilon)
 
                 # 4
                 p.data *= (1-weight_decay*alpha)
