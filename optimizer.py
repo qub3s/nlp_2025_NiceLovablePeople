@@ -52,10 +52,12 @@ class AdamW(Optimizer):
 
                 if state == {}: 
                     state["step"] = 0 
+                    # create tensors of same size as the model weights and biases
                     state["first_moment"] = torch.zeros_like(p.data)
                     state["second_moment"] = torch.zeros_like(p.data)
 
                 # Access hyperparameters from the `group` dictionary
+
                 alpha = group["lr"]
                 beta1, beta2 = group["betas"]
                 epsilon = group["eps"]
@@ -76,24 +78,22 @@ class AdamW(Optimizer):
                 # 4- After that main gradient-based update, update again using weight decay
                 #    (incorporating the learning rate again).
 
-                m = state["first_moment"]
-                v = state["second_moment"]
+                # 1
                 state["step"] += 1
                 
                 g = p.grad 
 
-                m = beta1 * m + ( 1 - beta1 ) * g
-                v = beta2 * v + ( 1 - beta2 ) * g**2 
+                state["first_moment"] = beta1 * state["first_moment"] + ( 1 - beta1 ) * g
+                state["second_moment"] = beta2 * state["second_moment"] + ( 1 - beta2 ) * g**2 
 
-                # why aren't these values pass by reference ??? like other pytorch tensors ...
-                state["first_moment"] = m
-                state["second_moment"] = v 
+                # 2
+                if correct_bias:
+                    alpha = alpha * math.sqrt(1-beta2**state["step"])/(1-beta1**state["step"])
 
-                alphat = alpha * math.sqrt(1-beta2**state["step"])/(1-beta1**state["step"])
+                # 3 
                 p.data = p.data - alphat * m/(torch.sqrt(v) + epsilon)
 
+                # 4
                 p.data *= (1-weight_decay*alpha)
-
-                #raise NotImplementedError
 
         return loss
