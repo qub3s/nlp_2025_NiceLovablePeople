@@ -15,7 +15,7 @@ from optimizer import AdamW
 
 TQDM_DISABLE = False
 
-batch_size = 1
+batch_size = 1 
 
 
 class BartWithClassifier(nn.Module):
@@ -66,39 +66,42 @@ def transform_data(dataset, max_length=512):
 
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", add_prefix_space=True)
 
-    s1 = list(dataset["sentence1_tokenized"].apply(eval))
-    s1 = list(dataset["sentence2_tokenized"].apply(eval))
 
-    s1_token = tokenizer(s1, is_split_into_words=True, return_tensors="pt", padding=True)
-    s2_token = tokenizer(s1, is_split_into_words=True, return_tensors="pt", padding=True)
+    # Tokenize the sentences
+    s1 = dataset["sentence1_tokenized"].apply(eval)
+    s2 = dataset["sentence2_tokenized"].apply(eval)
+
+    # Tokenize the sentences *
+    token = tokenizer(s1, s2, is_split_into_words=True, return_tensors="pt", padding=True)
 
     s1_atm = s1_token["attention_mask"]
     s1_inp_id = s1_token["input_ids"]
 
-    s2_atm = s2_token["attention_mask"]
-    s2_inp_id = s2_token["input_ids"]
 
     if("paraphrase_type_ids" in dataset.keys()):
-        para_ids = list(dataset["paraphrase_type_ids"].apply(eval))
+        # Read the solution labels
+        para_ids = list(dataset["paraphrase_type_ids"].apply(eval)) 
 
+        # Remove columns 12, 19, 20, 23, 27
         mask = torch.full( (32,), True)
         mask[[0, 12, 19, 20, 23, 27]] = False
 
         one_hot = []
 
         for x in para_ids:
-            oh = nn.functional.one_hot(torch.tensor(x), 32)
-            oh = oh[:, mask]
+            oh = nn.functional.one_hot(torch.tensor(x), 32)[:, mask]
             oh = torch.any(oh, dim=0)
             one_hot.append(oh)
         
         one_hot = torch.stack(one_hot)
-
-        ds = TensorDataset(s1_inp_id, s1_atm, one_hot)
+        
+        # create the Dataset and the Dataloader
+        ds = TensorDataset(token["attention_mask"], token["input_ids"], one_hot)
         dl = DataLoader(ds, batch_size = batch_size, shuffle=True)
     else:
-        ds = TensorDataset(s1_inp_id, s1_atm)
-        dl = DataLoader(ds, batch_size = 64, shuffle=True)
+        # create the Dataset and the Dataloader
+        ds = TensorDataset(token["attention_mask"], token["input_ids"])
+        dl = DataLoader(ds, batch_size = batch_size, shuffle=True)
 
     return dl 
 
@@ -117,12 +120,15 @@ def train_model(model, train_data, dev_data, device, epochs=5, lr=0.01):
     ### TODO
     #raise NotImplementedError
 
+    # create optimizer, loss_fn 
     optimizer = AdamW(model.parameters(), lr=lr)
-    loss_fn = nn.BCEWithLogitsLoss()
+    loss_fn = nn.BCELoss()
     model.to(device)
 
     for epoch in range(epochs):
         model.train()
+
+        # Reset vars
         train_loss = 0
         dev_loss = 0
         num_batches_train = 0
@@ -131,19 +137,28 @@ def train_model(model, train_data, dev_data, device, epochs=5, lr=0.01):
         for batch in tqdm(
             train_data, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
         ):
-            X1, X1M, Y = batch
+            X, X_mask, Y = batch
 
-            X1 = X1.to(device)
-            X1M = X1M.to(device)
+            X = X.to(device)
+            X_mask = X_mask.to(device)
             Y = Y.to(device)
 
+            # Reset gradients
             optimizer.zero_grad()
-            pred = model(X1, X1M)
+
+            # run predictions
+            pred = model(X, X_mask)
             
+            # calc loss
             loss = loss_fn(pred, Y.to(torch.float32))
+
+            # backpass
             loss.backward()
+
+            # adjust gradients
             optimizer.step()
 
+            # log the loss 
             train_loss += loss.item()
             num_batches_train += 1
 
@@ -152,16 +167,21 @@ def train_model(model, train_data, dev_data, device, epochs=5, lr=0.01):
         for batch in tqdm(
             dev_data, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
         ):
-            X1, X1M, Y = batch
+            X, X_mask, Y = batch
+            X_mask = X_mask.to(device)
 
-            X1 = X1.to(device)
-            X1M = X1M.to(device)
+            X = X.to(device)
             Y = Y.to(device)
 
+            # do not collect gradients during validation
             with torch.no_grad():
-                pred = model(X1, X1M)
+                # make prediction
+                pred = model(X, X_mask)
+
+                # calc loss
                 loss = loss_fn(pred, Y.to(torch.float32))
 
+            # log the loss
             dev_loss += loss.item()
             num_batches_dev += 1
 
@@ -181,25 +201,30 @@ def test_model(model, test_data, test_ids, device):
     #raise NotImplementedError
 
     model.to(device)
-    model.eval()
 
+    # set the model to eval (not store gradients)
+    model.eval()
+    
+    # load the data
     df = pd.DataFrame(columns=['id', 'Predicted_Paraphrase_Types'])
 
+    
     for data, ids in zip(test_data, test_ids):
-        print(df)
-        X1, X1M = data 
 
-        X1 = X1.to(device)
-        X1M = X1M.to(device)
+        X, X_mask = data 
+        X = X.to(device)
+        X_mask = X_mask.to(device)
 
+        # do not collect gradients
         with torch.no_grad():
-            pred = model(X1, X1M)
+            # make prediction
+            pred = model(X, X_mask)
 
+        # insert into dataframe
         i = len(df)
         df.loc[i, 'id'] = ids
         df.loc[i, 'Predicted_Paraphrase_Types'] = pred 
 
-    print(df)
     return df
 
 def evaluate_model(model, test_data, device):
