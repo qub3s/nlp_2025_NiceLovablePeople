@@ -68,15 +68,11 @@ def transform_data(dataset, max_length=512):
 
 
     # Tokenize the sentences
-    s1 = dataset["sentence1_tokenized"].apply(eval)
-    s2 = dataset["sentence2_tokenized"].apply(eval)
+    s1 = list(dataset["sentence1_tokenized"].apply(eval))
+    s2 = list(dataset["sentence2_tokenized"].apply(eval))
 
     # Tokenize the sentences *
     token = tokenizer(s1, s2, is_split_into_words=True, return_tensors="pt", padding=True)
-
-    s1_atm = s1_token["attention_mask"]
-    s1_inp_id = s1_token["input_ids"]
-
 
     if("paraphrase_type_ids" in dataset.keys()):
         # Read the solution labels
@@ -311,14 +307,14 @@ def finetune_paraphrase_detection(args):
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    #model = train_model(model, train_data, dev_data, device)
+    model = train_model(model, train_data, dev_data, device)
 
     #print("Training finished.")
 
     
-    #accuracy, matthews_corr = evaluate_model(model, dev_data, device)
-    #print(f"The accuracy of the model is: {accuracy:.3f}")
-    #print(f"Matthews Correlation Coefficient of the model is: {matthews_corr:.3f}")
+    accuracy, matthews_corr = evaluate_model(model, dev_data, device)
+    print(f"The accuracy of the model is: {accuracy:.3f}")
+    print(f"Matthews Correlation Coefficient of the model is: {matthews_corr:.3f}")
 
     test_ids = test_dataset["id"]
     test_results = test_model(model, test_data, test_ids, device)
