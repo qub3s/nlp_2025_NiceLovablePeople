@@ -4,6 +4,7 @@ import random
 import numpy as np
 import pandas as pd
 import torch
+import sklearn
 from sacrebleu.metrics import BLEU
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
@@ -24,8 +25,33 @@ def transform_data(dataset, max_length=256):
     Return Data Loader.
     """
     ### TODO 
-    raise NotImplementedError
+    #raise NotImplementedError
+    
+    # set up tokenizer
+    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=False) #TODO True!
 
+    # get data for sentence pairs out of the dataset
+    # format it according to: sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase_type_ids
+    SEP = tokenizer.sep_token
+    # TODO: tokenized sentences / .apply(eval)
+    formatted_input = list(dataset.apply(lambda row: ' '.join([row['sentence1'], SEP, row['sentence1_segment_location'], SEP, row['paraphrase_type_ids']]), axis=1))
+    #formatted_target = list(dataset.apply(lambda row: ' '.join([row['sentence2'], SEP, row['sentence2_segment_location']]), axis=1)) TODO remove
+
+    # get input_ids and attention_mask
+    token = tokenizer(formatted_input, return_tensors="pt", padding=True) # max_length=max_length, padding="max_length") is_split_into_words=True,TODO
+    input_ids = token["input_ids"]
+    attention_mask = token["attention_mask"]
+
+    # get DataLoader
+    batch_size = 1 # TODO what size?
+    # combine inputs into a TensorDataset
+    dataset = TensorDataset(input_ids, attention_mask)
+    dataloader = DataLoader(
+            dataset,
+            batch_size = batch_size,
+            shuffle = True
+        )
+    return dataloader
 
 def train_model(model, train_data, dev_data, device, tokenizer):
     """
@@ -33,6 +59,9 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     """
     ### TODO
     raise NotImplementedError
+    lr = 1e-5
+    epochs = 5
+    optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
 
 
 def test_model(test_data, test_ids, device, model, tokenizer):
@@ -119,24 +148,25 @@ def get_args():
 
 def finetune_paraphrase_generation(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
-    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
+    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=False) #TODO True!
     model.to(device)
-    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
+    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=False) #TODO True!
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv")
     test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv")
-    dev_dataset = pd.read_csv("data/etpc-paraphrase-dev.csv")
+    #dev_dataset = pd.read_csv("data/etpc-paraphrase-dev.csv")
 
     # You might do a split of the train data into train/validation set here
     # ...
+    train_set, dev_set = sklearn.model_selection.train_test_split(train_dataset, test_size=0.2)
 
-    train_data = transform_data(train_dataset)
-    dev_data = transform_data(dev_dataset)
+    train_data = transform_data(train_set)
+    dev_data = transform_data(dev_set)
     test_data = transform_data(test_dataset)
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
-    model = train_model(model, train_data, dev_dataset, device, tokenizer)
+    model = train_model(model, train_data, dev_data, device, tokenizer)
 
     print("Training finished.")
 
