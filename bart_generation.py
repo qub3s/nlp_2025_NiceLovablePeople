@@ -35,7 +35,6 @@ def transform_data(dataset, max_length=256):
     SEP = tokenizer.sep_token
     # TODO: tokenized sentences / .apply(eval)
     formatted_input = list(dataset.apply(lambda row: ' '.join([row['sentence1'], SEP, row['sentence1_segment_location'], SEP, row['paraphrase_type_ids']]), axis=1))
-    #formatted_target = list(dataset.apply(lambda row: ' '.join([row['sentence2'], SEP, row['sentence2_segment_location']]), axis=1)) TODO remove
 
     # get input_ids and attention_mask
     token = tokenizer(formatted_input, return_tensors="pt", padding=True) # max_length=max_length, padding="max_length") is_split_into_words=True,TODO
@@ -44,8 +43,16 @@ def transform_data(dataset, max_length=256):
 
     # get DataLoader
     batch_size = 1 # TODO what size?
-    # combine inputs into a TensorDataset
-    dataset = TensorDataset(input_ids, attention_mask)
+
+    # if not test set
+    if ('sentence2' in dataset.keys()):
+        formatted_target = list(dataset.apply(lambda row: ' '.join([row['sentence2'], SEP, row['sentence2_segment_location']]), axis=1)) #TODO segment_location?
+        target_token = tokenizer(formatted_target, return_tensors="pt", padding=True)
+        dataset = TensorDataset(input_ids, attention_mask, target_token["input_ids"])
+    else:
+        dataset = TensorDataset(input_ids, attention_mask)
+
+    # combine into a TensorDataset
     dataloader = DataLoader(
             dataset,
             batch_size = batch_size,
@@ -58,10 +65,65 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     Train the model. Return and save the model.
     """
     ### TODO
-    raise NotImplementedError
+    #raise NotImplementedError
     lr = 1e-5
     epochs = 5
     optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
+    # todo: loss function/bleu score?
+    model.to(device)
+
+    # Training loop
+    for epoch in range(epochs):
+
+        # reset variables
+        train_loss = 0
+        dev_loss = 0
+        train_num_batches = 0
+        dev_num_batches = 0
+
+        # Training
+        model.train()
+        for batch in tqdm(
+                train_data, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
+            ):
+
+            # prepare data
+            b_input_ids, b_attention_mask, b_labels = batch
+
+            b_input_ids = b_input_ids.to(device)
+            b_attention_mask = b_attention_mask.to(device)
+            b_labels = b_labels.to(device)
+
+            # reset gradients
+            optimizer.zero_grad()
+
+            # generate outputs
+            outputs = model(
+                b_input_ids,
+                attention_mask=b_attention_mask,
+                labels=b_labels,
+                #max_length=50,
+                #num_beams=5,
+                #early_stopping=True,
+            )
+            #print("Loss: ", outputs.loss) # TODO: model() or model.generate() or model.predict_paraphrase
+            #print("Outputs:", outputs)
+            #print('Generated: {}'.format(tokenizer.decode(outputs[0], skip_special_tokens=True)))
+            
+            # get loss, do backpass and andjust gradients
+            loss = outputs.loss
+            loss.backward()
+            optimizer.step()
+
+            # logging
+            train_loss += loss.detach().float()
+            train_num_batches += 1
+            print("Woohoo!")
+            break # todo remove
+        
+        # evaluation
+        model.eval()
+        #train_loss = train_loss / num_batches
 
 
 def test_model(test_data, test_ids, device, model, tokenizer):
