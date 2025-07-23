@@ -16,7 +16,7 @@ from optimizer import AdamW
 TQDM_DISABLE = False
 
 
-def transform_data(dataset, max_length=256):
+def transform_data(dataset, max_length=256, shuffle=True):
     """
     Turn the data to the format you want to use.
     Use AutoTokenizer to obtain encoding (input_ids and attention_mask).
@@ -28,7 +28,7 @@ def transform_data(dataset, max_length=256):
     #raise NotImplementedError
     
     # set up tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=False) #TODO True!
+    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
     # get data for sentence pairs out of the dataset
     # format it according to: sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase_type_ids
@@ -42,7 +42,7 @@ def transform_data(dataset, max_length=256):
     attention_mask = token["attention_mask"]
 
     # get DataLoader
-    batch_size = 1 # TODO what size?
+    batch_size = 32 # TODO 
 
     # if not test set
     if ('sentence2' in dataset.keys()):
@@ -56,7 +56,7 @@ def transform_data(dataset, max_length=256):
     dataloader = DataLoader(
             dataset,
             batch_size = batch_size,
-            shuffle = True
+            shuffle = shuffle
         )
     return dataloader
 
@@ -67,9 +67,8 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     ### TODO
     #raise NotImplementedError
     lr = 1e-5
-    epochs = 1 # TODO 5
+    epochs = 5
     optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
-    # todo: loss function/bleu score?
     model.to(device)
 
     # Training loop
@@ -106,9 +105,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
                 #num_beams=5,
                 #early_stopping=True,
             )
-            #print("Loss: ", outputs.loss) # TODO: model() or model.generate() or model.predict_paraphrase
-            #print("Outputs:", outputs)
-            #print('Generated: {}'.format(tokenizer.decode(outputs[0], skip_special_tokens=True)))
+            # TODO: model() or model.generate() or model.predict_paraphrase
             
             # get loss, do backpass and andjust gradients
             loss = outputs.loss
@@ -118,10 +115,8 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             # logging
             train_loss += loss.detach().float()
             train_num_batches += 1
-            print("Woohoo!") # todo remove
-            break # todo remove
         
-        # validation
+        # Validation
         model.eval()
         for batch in tqdm(
                 dev_data, desc=f"dev-{epoch+1:02}", disable=TQDM_DISABLE
@@ -147,9 +142,6 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             # logging
             dev_loss += loss.detach().float()
             dev_num_batches += 1
-            print("DevWuhu!") #todo remove
-            break # todo remove
-        print("Damm") #todo remove
 
         # TODO: use eval function to evaluate with dev_data ??? 
         # Doesn't work with transformed data
@@ -159,9 +151,8 @@ def train_model(model, train_data, dev_data, device, tokenizer):
         epoch_dev_loss = dev_loss / dev_num_batches
         tqdm.write(f"Epoch {epoch+1}\t Train Loss: {epoch_train_loss:.4f}")
         tqdm.write(f"Epoch {epoch+1}\t Validation Loss: {epoch_dev_loss:.4f}")
-        break
     
-    # TODO: save the model.
+    # TODO: save the model
     filepath = f"models/baseline-{epochs}-{lr}-paraphrase_detection.pt"
     torch.save(model, filepath)
     print(f"Saving the model to {filepath}.")
@@ -178,8 +169,41 @@ def test_model(test_data, test_ids, device, model, tokenizer):
     Return this dataframe.
     """
     ### TODO
-    raise NotImplementedError
+    #raise NotImplementedError
+    
+    model.to(device)
+    model.eval()
+    predictions = []
 
+    with torch.no_grad():
+        for batch in test_data:
+            # prepare data
+            input_ids, attention_mask = batch
+            input_ids = input_ids.to(device)
+            attention_mask = attention_mask.to(device)
+
+            # generate output
+            outputs = model.generate(
+                input_ids,
+                attention_mask=attention_mask,
+                max_length=50,
+                num_beams=5,
+                early_stopping=True,
+            )
+            
+            # decode predictions
+            pred_text = [
+                tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+                for g in outputs
+            ]
+
+            predictions.extend(pred_text)
+
+    # create dataframe with ids and predicted paraphrases
+    data = {"id": test_ids, "Generated_sentence2": predictions}
+    df = pd.DataFrame(data=data)
+
+    return df
 
 def evaluate_model(model, test_data, device, tokenizer):
     """
@@ -254,9 +278,9 @@ def get_args():
 
 def finetune_paraphrase_generation(args):
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
-    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=False) #TODO True!
+    model = BartForConditionalGeneration.from_pretrained("facebook/bart-large", local_files_only=True)
     model.to(device)
-    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=False) #TODO True!
+    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv")
     test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv")
@@ -268,7 +292,7 @@ def finetune_paraphrase_generation(args):
 
     train_data = transform_data(train_dataset)
     dev_data = transform_data(dev_dataset) 
-    test_data = transform_data(test_dataset)
+    test_data = transform_data(test_dataset, shuffle=False) # todo: shuffle?
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
