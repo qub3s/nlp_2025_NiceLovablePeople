@@ -67,7 +67,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     ### TODO
     #raise NotImplementedError
     lr = 1e-5
-    epochs = 5
+    epochs = 1 # TODO 5
     optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
     # todo: loss function/bleu score?
     model.to(device)
@@ -118,12 +118,56 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             # logging
             train_loss += loss.detach().float()
             train_num_batches += 1
-            print("Woohoo!")
+            print("Woohoo!") # todo remove
             break # todo remove
         
-        # evaluation
+        # validation
         model.eval()
-        #train_loss = train_loss / num_batches
+        for batch in tqdm(
+                dev_data, desc=f"dev-{epoch+1:02}", disable=TQDM_DISABLE
+            ):
+            # prepare data
+            b_input_ids, b_attention_mask, b_labels = batch
+
+            b_input_ids = b_input_ids.to(device)
+            b_attention_mask = b_attention_mask.to(device)
+            b_labels = b_labels.to(device)
+
+            # no gradients during validation
+            with torch.no_grad():
+                # generate outputs
+                outputs = model(
+                    b_input_ids,
+                    attention_mask=b_attention_mask,
+                    labels=b_labels,
+                )
+                # get loss
+                loss = outputs.loss
+            
+            # logging
+            dev_loss += loss.detach().float()
+            dev_num_batches += 1
+            print("DevWuhu!") #todo remove
+            break # todo remove
+        print("Damm") #todo remove
+
+        # TODO: use eval function to evaluate with dev_data ??? 
+        # Doesn't work with transformed data
+        
+        # log loss
+        epoch_train_loss = train_loss / train_num_batches
+        epoch_dev_loss = dev_loss / dev_num_batches
+        tqdm.write(f"Epoch {epoch+1}\t Train Loss: {epoch_train_loss:.4f}")
+        tqdm.write(f"Epoch {epoch+1}\t Validation Loss: {epoch_dev_loss:.4f}")
+        break
+    
+    # TODO: save the model.
+    filepath = f"models/baseline-{epochs}-{lr}-paraphrase_detection.pt"
+    torch.save(model, filepath)
+    print(f"Saving the model to {filepath}.")
+
+    return model
+
 
 
 def test_model(test_data, test_ids, device, model, tokenizer):
@@ -220,10 +264,10 @@ def finetune_paraphrase_generation(args):
 
     # You might do a split of the train data into train/validation set here
     # ...
-    train_set, dev_set = sklearn.model_selection.train_test_split(train_dataset, test_size=0.2)
+    train_dataset, dev_dataset = sklearn.model_selection.train_test_split(train_dataset, test_size=0.2)
 
-    train_data = transform_data(train_set)
-    dev_data = transform_data(dev_set)
+    train_data = transform_data(train_dataset)
+    dev_data = transform_data(dev_dataset) 
     test_data = transform_data(test_dataset)
 
     print(f"Loaded {len(train_dataset)} training samples.")
