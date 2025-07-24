@@ -3,6 +3,7 @@ import sys
 import torch
 
 sys.path.append("../")
+
 from bert import BertModel
 
 """
