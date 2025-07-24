@@ -41,7 +41,6 @@ def model_eval_multitask(
         quora_y_true = []
         quora_y_pred = []
         quora_sent_ids = []
-
         # Evaluate paraphrase detection.
         if task == "qqp" or task == "multitask":
             for step, batch in enumerate(tqdm(quora_dataloader, desc="eval", disable=TQDM_DISABLE)):
@@ -66,7 +65,6 @@ def model_eval_multitask(
                 quora_y_pred.extend(y_hat)
                 quora_y_true.extend(b_labels)
                 quora_sent_ids.extend(b_sent_ids)
-
         if task == "qqp" or task == "multitask":
             quora_accuracy = np.mean(np.array(quora_y_pred) == np.array(quora_y_true))
         else:

@@ -8,7 +8,7 @@
 #SBATCH --ntasks=1                   # total number of tasks
 #SBATCH --cpus-per-task=8            # number cores per task
 #SBATCH --mail-type=all              # send mail when job begins and ends
-#SBATCH --mail-user=TODO@stud.uni-goettingen.de   
+#SBATCH --mail-user=amon.poenitzsch@stud.uni-goettingen.de   
 #SBATCH --output=./slurm_files/slurm-%x-%j.out     # where to write output, %x give job name, %j names job id
 #SBATCH --error=./slurm_files/slurm-%x-%j.err      # where to write slurm error
 
@@ -31,4 +31,4 @@ echo "Latest Commit: $(git rev-parse --short HEAD)"
 echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
-python -u multitask_classifier.py --use_gpu --local_files_only --option finetune --task sst --hidden_dropout_prob 0.1
+python -c multitask_classifier.py --use_gpu --local_files_only --option pretrain --task qqp --hidden_dropout_prob 0.1
