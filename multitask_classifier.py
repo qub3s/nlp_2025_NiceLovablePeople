@@ -69,16 +69,30 @@ class MultitaskBERT(nn.Module):
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
         #self.sts_regressor = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE * 3, BERT_HIDDEN_SIZE), nn.ReLU(),nn.Linear(BERT_HIDDEN_SIZE, 1),)
 
-    def forward(self, input_ids, attention_mask):
-        outputs = self.bert(input_ids, attention_mask)
+    # def forward(self, input_ids, attention_mask):
+    #     outputs = self.bert(input_ids, attention_mask)
 
-        # Handle different return types from different BERT implementations
-        if isinstance(outputs, dict):
-            # If outputs is a dictionary, extract the last hidden state
-            return outputs["last_hidden_state"][:, 0, :]
-        else:
-            # If outputs is a sequence output object
-            return outputs.last_hidden_state[:, 0, :]
+    #     # Handle different return types from different BERT implementations
+    #     if isinstance(outputs, dict):
+    #         # If outputs is a dictionary, extract the last hidden state
+    #         return outputs["last_hidden_state"][:, 0, :]
+    #     else:
+    #         # If outputs is a sequence output object
+    #         return outputs.last_hidden_state[:, 0, :]
+
+    
+    def forward(self, input_ids, attention_mask):
+        """Takes a batch of sentences and produces embeddings for them."""
+
+        # The final BERT embedding is the hidden state of [CLS] token (the first token).
+        # See BertModel.forward() for more details.
+        # Here, you can start by just returning the embeddings straight from BERT.
+        # When thinking of improvements, you can later try modifying this
+        # (e.g., by adding other layers).
+        ### TODO
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        return outputs["pooler_output"]
+    
 
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         # Get embeddings for both sentences
