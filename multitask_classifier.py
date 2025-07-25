@@ -67,20 +67,8 @@ class MultitaskBERT(nn.Module):
         # STS Regression Head
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
-        #self.sts_regressor = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE * 3, BERT_HIDDEN_SIZE), nn.ReLU(),nn.Linear(BERT_HIDDEN_SIZE, 1),)
 
-    # def forward(self, input_ids, attention_mask):
-    #     outputs = self.bert(input_ids, attention_mask)
 
-    #     # Handle different return types from different BERT implementations
-    #     if isinstance(outputs, dict):
-    #         # If outputs is a dictionary, extract the last hidden state
-    #         return outputs["last_hidden_state"][:, 0, :]
-    #     else:
-    #         # If outputs is a sequence output object
-    #         return outputs.last_hidden_state[:, 0, :]
-
-    
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
 
@@ -89,24 +77,30 @@ class MultitaskBERT(nn.Module):
         # Here, you can start by just returning the embeddings straight from BERT.
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
-        ### TODO
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         return outputs["pooler_output"]
     
 
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+        """
+        Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
+        Since the similarity label is a number in the interval [0,5], your output should be normalized to the interval [0,5];
+        it will be handled as a logit by the appropriate loss function.
+        Dataset: STS
+        """
         # Get embeddings for both sentences
         emb1 = self.forward(input_ids_1, attention_mask_1)
         emb2 = self.forward(input_ids_2, attention_mask_2)
 
-        # Optimal feature combination
-        features = torch.cat([emb1, emb2, torch.abs(emb1 - emb2),],dim=1,)
-
+        # Feature combination
+        features = torch.cat([emb1, emb2, torch.abs(emb1 - emb2)], dim=1)
+        
         features = self.sts_dropout(features)
         logits = self.sts_regressor(features).squeeze()
-
-        # Scale outputs to [0,5] range
-        return torch.sigmoid(logits) * 5
+        
+        # Return raw logits for the regression loss (MSE)
+        return logits
+        
 
     def predict_sentiment(self, input_ids, attention_mask):
         """
@@ -272,8 +266,6 @@ def train_multitask(args):
                 train_loss += loss.item()
                 num_batches += 1
 
-        # stop = 0
-
         # STS training
         if args.task == "sts" or args.task == "multitask":
             for batch in tqdm(
@@ -300,10 +292,6 @@ def train_multitask(args):
 
                 train_loss += loss.item()
                 num_batches += 1
-
-                # stop += 1
-                # if stop > 10:
-                #     break
 
         train_loss = train_loss / (num_batches if num_batches > 0 else 1)
 
@@ -342,7 +330,6 @@ def train_multitask(args):
                 sst_dev_labels.extend(b_labels.cpu().numpy())
             sst_dev_acc = np.mean(np.array(sst_dev_preds) == np.array(sst_dev_labels))
 
-        # stop = 0
 
         # STS evaluation
         if args.task == "sts" or args.task == "multitask":
@@ -366,11 +353,7 @@ def train_multitask(args):
                     )  # Detach before numpy
                     sts_train_labels.extend(b_labels.cpu().numpy())
 
-                # stop += 1
-                # if stop > 10:
-                #     break
-
-            # stop = 0
+                
 
             sts_train_corr = np.corrcoef(sts_train_preds, sts_train_labels)[0, 1]
 
@@ -393,10 +376,6 @@ def train_multitask(args):
                         preds.detach().cpu().numpy()
                     )  # Detach before numpy
                     sts_dev_labels.extend(b_labels.cpu().numpy())
-
-                # stop += 1
-                # if stop > 10:
-                #     break
 
             sts_dev_corr = np.corrcoef(sts_dev_preds, sts_dev_labels)[0, 1]
 
