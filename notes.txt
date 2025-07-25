@@ -1,0 +1,24 @@
+Esther:
+
+1. nn.Linear is use to change dimensions easily. usual use.
+2. Always look at the class variables. they are often used in the methods we have to complete.
+3. multitask classifier.py. go and change the thing where pretrained model is loaded to False. (Only for the local machine not cluster)
+4. print inside bert files but you will have to initialize BertModel class with your own tensors as args to see anything.
+
+
+
+Questions:
+1. How to make it so that i know my implementation is working fine on the local machine? 
+How to pass only 2-3 rows from train dataset into bert
+My idea: 
+-line355 of multitask_classifier.py change the path to a file with only 10 rows. 
+-line454 of multitask_classifier.py change the batch_size default to 2.
+
+1b. How to run things on cluster? Should i just run it for sst? need to know structure and a little help.
+
+
+2. BertModel.forward(): [CLS] token's embedding in output is being passed through a denselayer for some reason without changing the dimensions at all
+then passed through tanh() not relu or gelu.
+
+3. MultitaskBERT.predict_sentiment(): Why am i returning the logits and not the actual prediction? 
+I can pass logits to softmax to get prob dist and then pick argmax of that distribution for my predicted sentiment.
