@@ -65,7 +65,14 @@ class MultitaskBERT(nn.Module):
             elif config.option == "finetune":
                 param.requires_grad = True
         ### TODO
-        raise NotImplementedError
+        # HS: Adding a linear layer for sentiment prediction. Will put this at end of last BERT block.
+        # The final BERT embedding is the hidden state of [CLS] token which I will get 
+        # as dict['pooler_output'] from output of BertModel.forward().
+        self.sentiment_classifier = nn.Linear(
+            BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES # 768 -> 5
+        )
+
+        # raise NotImplementedError
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
@@ -76,7 +83,10 @@ class MultitaskBERT(nn.Module):
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
         ### TODO
-        raise NotImplementedError
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        return outputs["pooler_output"]
+        
+        # raise NotImplementedError
 
     def predict_sentiment(self, input_ids, attention_mask):
         """
@@ -87,7 +97,12 @@ class MultitaskBERT(nn.Module):
         Dataset: SST
         """
         ### TODO
-        raise NotImplementedError
+        # HS: Get the sequence output from bert's forward pass and then pass it through the to bring it from 768->5 dimensions.
+        # The logits will be the output of the sentiment classifier.
+        sequence_output = self.forward(input_ids, attention_mask)
+        logits = self.sentiment_classifier(sequence_output)
+        return logits
+        # raise NotImplementedError
 
     def predict_paraphrase(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
