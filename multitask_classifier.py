@@ -23,7 +23,7 @@ from datasets import (
 from evaluation import model_eval_multitask, test_model_multitask
 from optimizer import AdamW
 
-TQDM_DISABLE = True
+TQDM_DISABLE = False
 
 
 # fix the random seed
@@ -253,6 +253,9 @@ def train_multitask(args):
                 train_loss += loss.item()
                 num_batches += 1
 
+                # if num_batches>10:
+                #     break
+
         if args.task == "sts" or args.task == "multitask":
             # Trains the model on the sts dataset
             ### TODO
@@ -339,7 +342,7 @@ def get_args():
 
     # Model configuration
     parser.add_argument("--seed", type=int, default=11711)
-    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--epochs", type=int, default=10)  
     parser.add_argument(
         "--option",
         type=str,
