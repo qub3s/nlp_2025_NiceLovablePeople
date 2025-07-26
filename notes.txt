@@ -1,19 +1,14 @@
 Esther:
-
 1. nn.Linear is use to change dimensions easily. usual use.
 2. Always look at the class variables. they are often used in the methods we have to complete.
 3. multitask classifier.py. go and change the thing where pretrained model is loaded to False. (Only for the local machine not cluster)
 4. print inside bert files but you will have to initialize BertModel class with your own tensors as args to see anything.
-
-
 
 Questions:
 1. How to make it so that i know my implementation is working fine on the local machine? 
 How to pass only 2-3 rows from train dataset into bert
 My idea: 
 -line 257 of multitask_classifer.py -- Add a break statement so training ends early.
-
-
 
 
 1b. How to run things on cluster? Should i just run it for sst? need to know structure and a little help.
@@ -25,9 +20,18 @@ then passed through tanh() not relu or gelu.
 I can pass logits to softmax to get prob dist and then pick argmax of that distribution for my predicted sentiment.
 
 
+## On local machine
+-line 257 of multitask_classifer.py -- Add a break statement so training ends early.
+-TQDM_DISABLE = False at top of multitask_classifer.py and evaluation.py
+python multitask_classifier.py --option pretrain --task=sst --epochs=4
+python multitask_classifier.py --option finetune --task=sst --epochs=2
 
-Cluster notes:
-- numpy error
+
+## cluster
+-Follow all instructions in the manual
+-run_train.sh needs to be checked. put email in it. add line on top for numpy problems. check last line
 
 
-python multitask_classifier.py --option finetune --task=sst
+## git add without /models
+git add --all -- ':!./models'
+

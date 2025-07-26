@@ -92,7 +92,7 @@ class BertSelfAttention(nn.Module):
         
         return attn_scores
     
-    
+
 
     def forward(self, hidden_states, attention_mask):
         """
@@ -273,7 +273,7 @@ class BertModel(BertPreTrainedModel):
         sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
 
         # get cls token hidden state
-        first_tk = sequence_output[:, 0]
+        first_tk = sequence_output[:, 0] # HS: All of first column in a 2d matrix
         first_tk = self.pooler_dense(first_tk)
         first_tk = self.pooler_af(first_tk)
 
