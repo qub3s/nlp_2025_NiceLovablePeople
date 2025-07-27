@@ -281,15 +281,8 @@ def train_multitask(args):
     optimizer = AdamW(model.parameters(), lr=args.lr)
     best_dev_acc = float("-inf")
 
-    stop = 0
-
     ## Training loop
     for epoch in range(args.epochs):
-        
-        if stop >= 1:
-            
-            break
-        stop +=1 
 
         model.train()
         train_loss = 0
