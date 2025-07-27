@@ -14,6 +14,8 @@
 
 module load miniforge3
 
+eval"$(conda shell.bash hook)"
+
 source activate dnlp # Or whatever you called your environment.
 
 # Printing out some info.
@@ -33,4 +35,4 @@ echo "Latest Commit: $(git rev-parse --short HEAD)"
 echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
-python -u multitask_classifier.py --use_gpu --local_files_only --option finetune --task sts
+python -u multitask_classifier.py --use_gpu --option finetune --task sts
