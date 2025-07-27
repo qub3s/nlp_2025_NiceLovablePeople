@@ -14,8 +14,6 @@
 
 module load miniforge3
 
-eval"$(conda shell.bash hook)"
-
 source activate dnlp # Or whatever you called your environment.
 
 # Printing out some info.
