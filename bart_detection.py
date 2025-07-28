@@ -17,7 +17,6 @@ TQDM_DISABLE = False
 
 batch_size = 1 
 
-
 class BartWithClassifier(nn.Module):
     def __init__(self, num_labels=26):
         super(BartWithClassifier, self).__init__()
