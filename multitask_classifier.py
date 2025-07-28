@@ -288,7 +288,7 @@ def train_multitask(args):
             batch_size=args.batch_size,
             collate_fn=sst_dev_data.collate_fn,
         )
-        
+    # QQP dataset
     elif args.task == "qqp" or args.task == "multitask":
         qqp_train_data = SentencePairDataset(quora_train_data, args)  # Dataset für Satzpaare
         qqp_dev_data = SentencePairDataset(quora_dev_data, args)
@@ -334,9 +334,18 @@ def train_multitask(args):
     }
     config = SimpleNamespace(**config)
 
+    separator = "-" * 30
+    print(separator)
+    print("    BERT Model Configuration")
+    print(separator)
+    print(pformat({k: v for k, v in vars(args).items() if "csv" not in str(v)}))
+    print(separator)
+
     model = MultitaskBERT(config)
     model = model.to(device)
-    optimizer = AdamW(model.parameters(), lr=args.lr)
+
+    lr = args.lr
+    optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = float("-inf")
 
     ## Training loop
@@ -372,10 +381,31 @@ def train_multitask(args):
 
         # STS training
         if args.task == "sts" or args.task == "multitask":
-            # Trains the model on the sts dataset
-            ### TODO
-            raise NotImplementedError
+            for batch in tqdm(
+                sts_train_dataloader,
+                desc=f"train-sts-{epoch+1:02}",
+                disable=TQDM_DISABLE,
+            ):
+                b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                    batch["token_ids_1"].to(device),
+                    batch["attention_mask_1"].to(device),
+                    batch["token_ids_2"].to(device),
+                    batch["attention_mask_2"].to(device),
+                    batch["labels"].to(device).float(),
+                )
 
+                optimizer.zero_grad()
+                predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                loss = F.mse_loss(predictions, b_labels.view(-1))
+
+                if config.option == "finetune":
+                    loss.backward()
+                    optimizer.step()
+
+                train_loss += loss.item()
+                num_batches += 1
+
+        # QQP training
         if args.task == "qqp" or args.task == "multitask":
             # Train the model on the qqp dataset
             for batch in tqdm(
@@ -444,15 +474,12 @@ def train_multitask(args):
         }[args.task]
 
         print(
-            f"Epoch {epoch+1:02} ({args.task}): train loss :: {train_loss:.3f}, "
-            f"train {metric_name} :: {train_metric:.3f}, "
-            f"dev {metric_name} :: {dev_metric:.3f}"
+            f"Epoch {epoch+1:02} ({args.task}): train loss :: {train_loss:.3f}, train :: {train_acc:.3f}, dev :: {dev_acc:.3f}"
         )
 
-        if dev_metric > best_dev_acc:
-            best_dev_acc = dev_metric
+        if dev_acc > best_dev_acc:
+            best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
-            print(f"New best model saved with dev {metric_name}: {dev_metric:.3f}")
 
 def test_model(args):
     with torch.no_grad():
