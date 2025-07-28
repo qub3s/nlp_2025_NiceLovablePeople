@@ -36,7 +36,7 @@ def transform_data(dataset, max_length=256, shuffle=True):
     formatted_input = list(dataset.apply(lambda row: ' '.join([row['sentence1'], SEP, row['sentence1_segment_location'], SEP, row['paraphrase_type_ids']]), axis=1))
 
     # Get input_ids and attention_mask
-    token = tokenizer(formatted_input, return_tensors="pt", padding=True) # max_length=max_length, padding="max_length") % TODO test padding stuff
+    token = tokenizer(formatted_input, return_tensors="pt", padding=True) # max_length=max_length, padding="max_length") 
     input_ids = token["input_ids"]
     attention_mask = token["attention_mask"]
 
