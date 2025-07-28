@@ -12,11 +12,10 @@ from transformers import AutoTokenizer, BartModel
 from sklearn.metrics import matthews_corrcoef
 from optimizer import AdamW
 
-
 TQDM_DISABLE = False
 
-batch_size = 1 
-
+batch_size = 128
+lr = 1e-5
 
 class BartWithClassifier(nn.Module):
     def __init__(self, num_labels=26):
@@ -37,6 +36,7 @@ class BartWithClassifier(nn.Module):
 
         # Return the probabilities
         probabilities = self.sigmoid(logits)
+
         return probabilities
 
 
@@ -66,13 +66,12 @@ def transform_data(dataset, max_length=512):
 
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", add_prefix_space=True)
 
-
     # Tokenize the sentences
     s1 = list(dataset["sentence1_tokenized"].apply(eval))
     s2 = list(dataset["sentence2_tokenized"].apply(eval))
 
-    # Tokenize the sentences *
-    token = tokenizer(s1, s2, is_split_into_words=True, return_tensors="pt", padding=True)
+    # Tokenize the sentences
+    token = tokenizer(s1, s2, is_split_into_words=True, padding=True, return_tensors="pt")
 
     if("paraphrase_type_ids" in dataset.keys()):
         # Read the solution labels
@@ -92,17 +91,17 @@ def transform_data(dataset, max_length=512):
         one_hot = torch.stack(one_hot)
         
         # create the Dataset and the Dataloader
-        ds = TensorDataset(token["attention_mask"], token["input_ids"], one_hot)
+        ds = TensorDataset(token["input_ids"], token["attention_mask"], one_hot)
         dl = DataLoader(ds, batch_size = batch_size, shuffle=True)
     else:
         # create the Dataset and the Dataloader
-        ds = TensorDataset(token["attention_mask"], token["input_ids"])
+        ds = TensorDataset(token["input_ids"], token["attention_mask"])
         dl = DataLoader(ds, batch_size = batch_size, shuffle=True)
 
     return dl 
 
 
-def train_model(model, train_data, dev_data, device, epochs=5, lr=0.01):
+def train_model(model, train_data, dev_data, device, epochs=5, lr=lr):
     """
     Train the model. You can use any training loop you want. We recommend starting with
     AdamW as your optimizer. You can take a look at the SST training loop for reference.
@@ -119,7 +118,7 @@ def train_model(model, train_data, dev_data, device, epochs=5, lr=0.01):
     # create optimizer, loss_fn 
     optimizer = AdamW(model.parameters(), lr=lr)
     loss_fn = nn.BCELoss()
-    model.to(device)
+    model = model.to(device)
 
     for epoch in range(epochs):
         model.train()
@@ -137,6 +136,8 @@ def train_model(model, train_data, dev_data, device, epochs=5, lr=0.01):
 
             X = X.to(device)
             X_mask = X_mask.to(device)
+
+            Y = Y.to(torch.float32)
             Y = Y.to(device)
 
             # Reset gradients
@@ -145,8 +146,12 @@ def train_model(model, train_data, dev_data, device, epochs=5, lr=0.01):
             # run predictions
             pred = model(X, X_mask)
             
-            # calc loss
-            loss = loss_fn(pred, Y.to(torch.float32))
+            # calc loss & clamp the values
+            eps = 1e-7
+            pred = pred.clamp(min=eps, max=1-eps)
+            Y = Y.clamp(min=eps, max=1-eps)
+
+            loss = loss_fn(pred, Y)
 
             # backpass
             loss.backward()
@@ -167,6 +172,7 @@ def train_model(model, train_data, dev_data, device, epochs=5, lr=0.01):
             X_mask = X_mask.to(device)
 
             X = X.to(device)
+            Y = Y.to(torch.float32)
             Y = Y.to(device)
 
             # do not collect gradients during validation
@@ -175,7 +181,7 @@ def train_model(model, train_data, dev_data, device, epochs=5, lr=0.01):
                 pred = model(X, X_mask)
 
                 # calc loss
-                loss = loss_fn(pred, Y.to(torch.float32))
+                loss = loss_fn(pred, Y)
 
             # log the loss
             dev_loss += loss.item()
@@ -196,17 +202,15 @@ def test_model(model, test_data, test_ids, device):
     ### TODO
     #raise NotImplementedError
 
-    model.to(device)
+    model = model.to(device)
 
     # set the model to eval (not store gradients)
     model.eval()
     
     # load the data
     df = pd.DataFrame(columns=['id', 'Predicted_Paraphrase_Types'])
-
     
     for data, ids in zip(test_data, test_ids):
-
         X, X_mask = data 
         X = X.to(device)
         X_mask = X_mask.to(device)
@@ -299,7 +303,7 @@ def finetune_paraphrase_detection(args):
 
     # TODO You might do a split of the train data into train/validation set here
     # (or in the csv files directly)
-    train_ds, val_ds = sklearn.model_selection.train_test_split(train_dataset, test_size=0.2)
+    train_ds, val_ds = sklearn.model_selection.train_test_split(train_dataset, test_size=0.20)
     
     train_data = transform_data(train_ds)
     dev_data = transform_data(val_ds)
@@ -309,7 +313,7 @@ def finetune_paraphrase_detection(args):
 
     model = train_model(model, train_data, dev_data, device)
 
-    #print("Training finished.")
+    print("Training finished.")
 
     
     accuracy, matthews_corr = evaluate_model(model, dev_data, device)
