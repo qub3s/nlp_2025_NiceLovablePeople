@@ -75,6 +75,10 @@ class MultitaskBERT(nn.Module):
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
 
+        # Add layers for sentiment classification
+        self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
+        self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)  # Logit-Ausgabe
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
@@ -133,7 +137,82 @@ class MultitaskBERT(nn.Module):
         during evaluation, and handled as a logit by the appropriate loss function.
         Dataset: Quora
         """
-        # Placeholder for paraphrase detection - to be implemented later
+        device = input_ids_1.device
+        sep_token_id = 102  # [SEP] token
+        cls_token_id = 101  # [CLS] token
+
+        # Process each sentence pair
+        combined_input_ids = []
+        combined_attention_masks = []
+        
+        for i in range(input_ids_1.size(0)):
+            # Process first sentence (remove trailing [SEP] if exists)
+            seq1 = input_ids_1[i]
+            if seq1[-1] == sep_token_id:
+                seq1 = seq1[:-1]
+                mask1 = attention_mask_1[i][:-1]
+            else:
+                mask1 = attention_mask_1[i]
+
+            # Process second sentence (remove [CLS] and trailing [SEP])
+            seq2 = input_ids_2[i]
+            if seq2[0] == cls_token_id:
+                seq2 = seq2[1:]
+                mask2 = attention_mask_2[i][1:]
+            if seq2[-1] == sep_token_id:
+                seq2 = seq2[:-1]
+                mask2 = mask2[:-1]
+
+            # Combine with [SEP] tokens
+            new_input = torch.cat([
+                seq1,
+                torch.tensor([sep_token_id], device=device),
+                seq2,
+                torch.tensor([sep_token_id], device=device)
+            ])
+            
+            new_mask = torch.cat([
+                mask1,
+                torch.tensor([1], device=device),
+                mask2,
+                torch.tensor([1], device=device)
+            ])
+            
+            combined_input_ids.append(new_input)
+            combined_attention_masks.append(new_mask)
+
+        # Pad sequences
+        input_ids = torch.nn.utils.rnn.pad_sequence(
+            combined_input_ids, batch_first=True, padding_value=0)
+        attention_mask = torch.nn.utils.rnn.pad_sequence(
+            combined_attention_masks, batch_first=True, padding_value=0)
+
+        # BERT-Ausgabe
+        outputs = self.bert(
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
+
+        # [CLS]-Token extrahieren
+        if isinstance(outputs, dict):
+            cls_embedding = outputs["last_hidden_state"][:, 0]  # Shape: [batch_size, hidden_size]
+        else:
+            cls_embedding = outputs[0][:, 0]  # Fallback für tuple-Outputs
+
+        # Dropout anwenden (optional, aber empfohlen)
+        #cls_embedding = self.dropout(cls_embedding)
+
+        # Paraphrase-Logits berechnen
+        logits = self.paraphrase_classifier(cls_embedding)  # Shape: [batch_size, 1]
+        return logits.squeeze(-1)  # Shape: [batch_size]
+    def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+        """
+        Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
+        Since the similarity label is a number in the interval [0,5], your output should be normalized to the interval [0,5];
+        it will be handled as a logit by the appropriate loss function.
+        Dataset: STS
+        """
+        ### TODO
         raise NotImplementedError
 
     def predict_paraphrase_types(
@@ -148,7 +227,6 @@ class MultitaskBERT(nn.Module):
         """
         ### TODO
         raise NotImplementedError
-
 
 def save_model(model, optimizer, args, config, filepath):
     save_info = {
@@ -210,9 +288,26 @@ def train_multitask(args):
             batch_size=args.batch_size,
             collate_fn=sst_dev_data.collate_fn,
         )
+        
+    elif args.task == "qqp" or args.task == "multitask":
+        qqp_train_data = SentencePairDataset(quora_train_data, args)  # Dataset für Satzpaare
+        qqp_dev_data = SentencePairDataset(quora_dev_data, args)
 
+        quora_train_dataloader = DataLoader(
+            qqp_train_data,
+            shuffle=True,
+            batch_size=args.batch_size,
+            collate_fn=qqp_train_data.collate_fn,
+        )
+        quora_dev_dataloader = DataLoader(
+            qqp_dev_data,
+            shuffle=False,
+            batch_size=args.batch_size,
+            collate_fn=qqp_dev_data.collate_fn,
+        )
+        
     # STS dataset
-    if args.task == "sts" or args.task == "multitask":
+    elif args.task == "sts" or args.task == "multitask":
         sts_train_data = SentencePairDataset(sts_train_data, args)
         sts_dev_data = SentencePairDataset(sts_dev_data, args)
 
@@ -277,114 +372,76 @@ def train_multitask(args):
 
         # STS training
         if args.task == "sts" or args.task == "multitask":
+            # Trains the model on the sts dataset
+            ### TODO
+            raise NotImplementedError
+
+        if args.task == "qqp" or args.task == "multitask":
+            # Train the model on the qqp dataset
             for batch in tqdm(
-                sts_train_dataloader,
-                desc=f"train-sts-{epoch+1:02}",
-                disable=TQDM_DISABLE,
+                quora_train_dataloader, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
             ):
-                b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                    batch["token_ids_1"].to(device),
-                    batch["attention_mask_1"].to(device),
-                    batch["token_ids_2"].to(device),
-                    batch["attention_mask_2"].to(device),
-                    batch["labels"].to(device).float(),
+                b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels = (
+                    batch["token_ids_1"],
+                    batch["attention_mask_1"],
+                    batch["token_ids_2"],
+                    batch["attention_mask_2"],
+                    batch["labels"],
                 )
 
-                optimizer.zero_grad()
-                predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                loss = F.mse_loss(predictions, b_labels.view(-1))
+                b_ids_1 = b_ids_1.to(device)
+                b_mask_1 = b_mask_1.to(device)
+                b_ids_2 = b_ids_2.to(device)
+                b_mask_2 = b_mask_2.to(device)
+                b_labels = b_labels.to(device)
 
-                if config.option == "finetune":
-                    loss.backward()
-                    optimizer.step()
+                optimizer.zero_grad()
+                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+                loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
+                loss.backward()
+                optimizer.step()
 
                 train_loss += loss.item()
                 num_batches += 1
 
-        ## Evaluation
-        model.eval()
-        sst_train_acc, sst_dev_acc = 0, 0
-        sts_train_corr, sts_dev_corr = 0, 0
-        etpc_train_acc, etpc_dev_acc = 0, 0
+            
+        if args.task == "etpc" or args.task == "multitask":
+            # Trains the model on the etpc dataset
+            ### TODO
+            raise NotImplementedError
 
-        # SST evaluation
-        if args.task == "sst" or args.task == "multitask":
-            sst_train_preds, sst_train_labels = [], []
-            for batch in sst_train_dataloader:
-                b_ids, b_mask, b_labels = (
-                    batch["token_ids"].to(device),
-                    batch["attention_mask"].to(device),
-                    batch["labels"].to(device),
-                )
-                logits = model.predict_sentiment(b_ids, b_mask)
-                preds = torch.argmax(logits, dim=1)
-                sst_train_preds.extend(preds.cpu().numpy())
-                sst_train_labels.extend(b_labels.cpu().numpy())
-            sst_train_acc = np.mean(np.array(sst_train_preds) == np.array(sst_train_labels))
+        train_loss = train_loss / num_batches
 
-            sst_dev_preds, sst_dev_labels = [], []
-            for batch in sst_dev_dataloader:
-                b_ids, b_mask, b_labels = (
-                    batch["token_ids"].to(device),
-                    batch["attention_mask"].to(device),
-                    batch["labels"].to(device),
-                )
-                logits = model.predict_sentiment(b_ids, b_mask)
-                preds = torch.argmax(logits, dim=1)
-                sst_dev_preds.extend(preds.cpu().numpy())
-                sst_dev_labels.extend(b_labels.cpu().numpy())
-            sst_dev_acc = np.mean(np.array(sst_dev_preds) == np.array(sst_dev_labels))
 
-        # STS evaluation
-        if args.task == "sts" or args.task == "multitask":
-            sts_train_preds, sts_train_labels = [], []
-            for batch in sts_train_dataloader:
-                b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                    batch["token_ids_1"].to(device),
-                    batch["attention_mask_1"].to(device),
-                    batch["token_ids_2"].to(device),
-                    batch["attention_mask_2"].to(device),
-                    batch["labels"].to(device),
-                )
-                with torch.no_grad():
-                    preds = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                    sts_train_preds.extend(preds.detach().cpu().numpy())
-                    sts_train_labels.extend(b_labels.cpu().numpy())
-
-            sts_train_corr = np.corrcoef(sts_train_preds, sts_train_labels)[0, 1]
-
-            sts_dev_preds, sts_dev_labels = [], []
-            for batch in sts_dev_dataloader:
-                b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                    batch["token_ids_1"].to(device),
-                    batch["attention_mask_1"].to(device),
-                    batch["token_ids_2"].to(device),
-                    batch["attention_mask_2"].to(device),
-                    batch["labels"].to(device),
-                )
-                with torch.no_grad():
-                    preds = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                    sts_dev_preds.extend(preds.detach().cpu().numpy())
-                    sts_dev_labels.extend(b_labels.cpu().numpy())
-
-            sts_dev_corr = np.corrcoef(sts_dev_preds, sts_dev_labels)[0, 1]
-   
-
-        # Print metrics
-        if args.task == "sst":
-            train_metric, dev_metric = sst_train_acc, sst_dev_acc
-            metric_name = "acc"
-        elif args.task == "sts":
-            train_metric, dev_metric = sts_train_corr, sts_dev_corr
-            metric_name = "corr"
-        elif args.task == "etpc":
-            train_metric, dev_metric = etpc_train_acc, etpc_dev_acc
-            metric_name = "acc"
-        elif args.task == "multitask":
-            # Average all metrics for multitask
-            train_metric = (sst_train_acc + sts_train_corr + etpc_train_acc) / 3
-            dev_metric = (sst_dev_acc + sts_dev_corr + etpc_dev_acc) / 3
-            metric_name = "avg_metric"
+        quora_train_acc, _, _, sst_train_acc, _, _, sts_train_corr, _, _, etpc_train_acc, _, _ = (
+            model_eval_multitask(
+                sst_train_dataloader,
+                quora_train_dataloader,
+                sts_train_dataloader,
+                etpc_train_dataloader,
+                model=model,
+                device=device,
+                task=args.task,
+            )
+        )
+        quora_dev_acc, _, _, sst_dev_acc, _, _, sts_dev_corr, _, _, etpc_dev_acc, _, _ = (
+            model_eval_multitask(
+                sst_dev_dataloader,
+                quora_dev_dataloader,
+                sts_dev_dataloader,
+                etpc_dev_dataloader,
+                model=model,
+                device=device,
+                task=args.task,
+            )
+        )
+        train_acc, dev_acc = {
+            "sst": (sst_train_acc, sst_dev_acc),
+            "sts": (sts_train_corr, sts_dev_corr),
+            "qqp": (quora_train_acc, quora_dev_acc),
+            "etpc": (etpc_train_acc, etpc_dev_acc),
+            "multitask": (0, 0),  # TODO
+        }[args.task]
 
         print(
             f"Epoch {epoch+1:02} ({args.task}): train loss :: {train_loss:.3f}, "
@@ -396,7 +453,6 @@ def train_multitask(args):
             best_dev_acc = dev_metric
             save_model(model, optimizer, args, config, args.filepath)
             print(f"New best model saved with dev {metric_name}: {dev_metric:.3f}")
-
 
 def test_model(args):
     with torch.no_grad():
@@ -411,10 +467,8 @@ def test_model(args):
 
         return test_model_multitask(args, model, device)
 
-
 def get_args():
     parser = argparse.ArgumentParser()
-
     # Training task
     parser.add_argument(
         "--task",
@@ -437,7 +491,7 @@ def get_args():
     parser.add_argument("--use_gpu", action="store_true")
 
     args, _ = parser.parse_known_args()
-
+    print(f"args: {args}")
     # Dataset paths
     parser.add_argument("--sst_train", type=str, default="data/sst-sentiment-train.csv")
     parser.add_argument("--sst_dev", type=str, default="data/sst-sentiment-dev.csv")
