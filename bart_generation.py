@@ -27,32 +27,31 @@ def transform_data(dataset, max_length=256, shuffle=True):
     ### TODO 
     #raise NotImplementedError
     
-    # set up tokenizer
+    # Set up tokenizer
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
-    # get data for sentence pairs out of the dataset
-    # format it according to: sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase_type_ids
+    # Get data for sentence pairs out of the dataset
+    # Format it according to: sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase_type_ids
     SEP = tokenizer.sep_token
-    # TODO: tokenized sentences / .apply(eval)
     formatted_input = list(dataset.apply(lambda row: ' '.join([row['sentence1'], SEP, row['sentence1_segment_location'], SEP, row['paraphrase_type_ids']]), axis=1))
 
-    # get input_ids and attention_mask
-    token = tokenizer(formatted_input, return_tensors="pt", padding=True) # max_length=max_length, padding="max_length") is_split_into_words=True,TODO
+    # Get input_ids and attention_mask
+    token = tokenizer(formatted_input, return_tensors="pt", padding=True) # max_length=max_length, padding="max_length") % TODO test padding stuff
     input_ids = token["input_ids"]
     attention_mask = token["attention_mask"]
 
-    # get DataLoader
-    batch_size = 32 # TODO 
+    # Get DataLoader
+    batch_size = 32
 
-    # if not test set
+    # If not test set
     if ('sentence2' in dataset.keys()):
-        formatted_target = list(dataset.apply(lambda row: ' '.join([row['sentence2'], SEP, row['sentence2_segment_location']]), axis=1)) #TODO segment_location?
+        formatted_target = list(dataset["sentence2"])
         target_token = tokenizer(formatted_target, return_tensors="pt", padding=True)
         dataset = TensorDataset(input_ids, attention_mask, target_token["input_ids"])
     else:
         dataset = TensorDataset(input_ids, attention_mask)
 
-    # combine into a TensorDataset
+    # Combine into a TensorDataset
     dataloader = DataLoader(
             dataset,
             batch_size = batch_size,
@@ -67,14 +66,14 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     ### TODO
     #raise NotImplementedError
     lr = 1e-5
-    epochs = 5
+    epochs = 5 
     optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
     model.to(device)
 
     # Training loop
     for epoch in range(epochs):
 
-        # reset variables
+        # Reset variables
         train_loss = 0
         dev_loss = 0
         train_num_batches = 0
@@ -86,33 +85,29 @@ def train_model(model, train_data, dev_data, device, tokenizer):
                 train_data, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
             ):
 
-            # prepare data
+            # Prepare data
             b_input_ids, b_attention_mask, b_labels = batch
 
             b_input_ids = b_input_ids.to(device)
             b_attention_mask = b_attention_mask.to(device)
             b_labels = b_labels.to(device)
 
-            # reset gradients
+            # Reset gradients
             optimizer.zero_grad()
 
-            # generate outputs
+            # Generate outputs
             outputs = model(
                 b_input_ids,
                 attention_mask=b_attention_mask,
-                labels=b_labels,
-                #max_length=50,
-                #num_beams=5,
-                #early_stopping=True,
+                labels=b_labels
             )
-            # TODO: model() or model.generate() or model.predict_paraphrase
             
-            # get loss, do backpass and andjust gradients
+            # Get loss, do backpass and andjust gradients
             loss = outputs.loss
             loss.backward()
             optimizer.step()
 
-            # logging
+            # Logging
             train_loss += loss.detach().float()
             train_num_batches += 1
         
@@ -121,38 +116,34 @@ def train_model(model, train_data, dev_data, device, tokenizer):
         for batch in tqdm(
                 dev_data, desc=f"dev-{epoch+1:02}", disable=TQDM_DISABLE
             ):
-            # prepare data
+            # Prepare data
             b_input_ids, b_attention_mask, b_labels = batch
 
             b_input_ids = b_input_ids.to(device)
             b_attention_mask = b_attention_mask.to(device)
             b_labels = b_labels.to(device)
 
-            # no gradients during validation
+            # No gradients during validation
             with torch.no_grad():
-                # generate outputs
+                # Generate outputs
                 outputs = model(
                     b_input_ids,
                     attention_mask=b_attention_mask,
                     labels=b_labels,
                 )
-                # get loss
+                # Get loss
                 loss = outputs.loss
             
-            # logging
+            # Logging
             dev_loss += loss.detach().float()
             dev_num_batches += 1
-
-        # TODO: use eval function to evaluate with dev_data ??? 
-        # Doesn't work with transformed data
         
-        # log loss
+        # Log loss
         epoch_train_loss = train_loss / train_num_batches
         epoch_dev_loss = dev_loss / dev_num_batches
         tqdm.write(f"Epoch {epoch+1}\t Train Loss: {epoch_train_loss:.4f}")
         tqdm.write(f"Epoch {epoch+1}\t Validation Loss: {epoch_dev_loss:.4f}")
     
-    # TODO: save the model
     filepath = f"models/baseline-{epochs}-{lr}-paraphrase_detection.pt"
     torch.save(model, filepath)
     print(f"Saving the model to {filepath}.")
@@ -177,12 +168,12 @@ def test_model(test_data, test_ids, device, model, tokenizer):
 
     with torch.no_grad():
         for batch in test_data:
-            # prepare data
+            # Prepare data
             input_ids, attention_mask = batch
             input_ids = input_ids.to(device)
             attention_mask = attention_mask.to(device)
 
-            # generate output
+            # Generate output
             outputs = model.generate(
                 input_ids,
                 attention_mask=attention_mask,
@@ -191,7 +182,7 @@ def test_model(test_data, test_ids, device, model, tokenizer):
                 early_stopping=True,
             )
             
-            # decode predictions
+            # Decode predictions
             pred_text = [
                 tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
                 for g in outputs
@@ -199,8 +190,8 @@ def test_model(test_data, test_ids, device, model, tokenizer):
 
             predictions.extend(pred_text)
 
-    # create dataframe with ids and predicted paraphrases
-    data = {"id": test_ids, "Generated_sentence2": predictions}
+    # Create dataframe with ids and predicted paraphrases
+    data = {"id": test_ids, "Generated_sentence2": predictions} 
     df = pd.DataFrame(data=data)
 
     return df
@@ -292,7 +283,7 @@ def finetune_paraphrase_generation(args):
 
     train_data = transform_data(train_dataset)
     dev_data = transform_data(dev_dataset) 
-    test_data = transform_data(test_dataset, shuffle=False) # todo: shuffle?
+    test_data = transform_data(test_dataset, shuffle=False)
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
