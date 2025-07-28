@@ -205,15 +205,7 @@ class MultitaskBERT(nn.Module):
         # Paraphrase-Logits berechnen
         logits = self.paraphrase_classifier(cls_embedding)  # Shape: [batch_size, 1]
         return logits.squeeze(-1)  # Shape: [batch_size]
-    def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
-        """
-        Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
-        Since the similarity label is a number in the interval [0,5], your output should be normalized to the interval [0,5];
-        it will be handled as a logit by the appropriate loss function.
-        Dataset: STS
-        """
-        ### TODO
-        raise NotImplementedError
+    
 
     def predict_paraphrase_types(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
