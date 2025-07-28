@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=train-multitask_classifier
-#SBATCH -t 00:20:00                  # estimated time # TODO: adapt to your needs
+#SBATCH -t 01:20:00                  # estimated time # TODO: adapt to your needs
 #SBATCH -p grete:shared              # the partition you are training on (i.e., which nodes), for nodes see sinfo -p grete:shared --format=%N,%G
 #SBATCH -G A100:1                    # take 1 GPU, see https://docs.hpc.gwdg.de/compute_partitions/gpu_partitions/index.html for more options
 #SBATCH --mem-per-gpu=8G             # setting the right constraints for the splitted gpu partitions
@@ -13,10 +13,8 @@
 #SBATCH --error=./slurm_files/slurm-%x-%j.err      # where to write slurm error
 
 module load miniforge3
-
-eval "$(conda shell.bash hook)" 
-
-source activate dnlp # Or whatever you called your environment.
+eval "$(conda shell.bash hook)"
+conda activate dnlp # Or whatever you called your environment.
 
 # Printing out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
@@ -41,3 +39,5 @@ python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidde
 # STS
 python -u multitask_classifier.py --use_gpu --option finetune --task sts --hidden_dropout_prob 0.25 --epochs=10
 
+#QQP
+python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=1

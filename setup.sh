@@ -1,6 +1,9 @@
 #!/bin/bash -i
 set -e
 
+eval "$(conda shell.bash hook)"
+
+
 # Set up Conda, install Python
 conda create -n dnlp python=3.10
 conda activate dnlp
