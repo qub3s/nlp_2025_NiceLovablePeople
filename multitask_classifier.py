@@ -89,7 +89,7 @@ class MultitaskBERT(nn.Module):
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        return outputs["pooler_output"]
+        return outputs
     
 
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
@@ -166,8 +166,12 @@ class MultitaskBERT(nn.Module):
             combined_attention_masks, batch_first=True, padding_value=0)
         
         # Get embeddings
-        cls_embedding = self.forward(input_ids, attention_mask)
-        
+        outputs = self.forward(input_ids=input_ids, attention_mask=attention_mask)
+
+        if isinstance(outputs, dict):
+            cls_embedding = outputs["last_hidden_state"][:, 0]  # Shape: [batch_size, hidden_size]
+        else:
+            cls_embedding = outputs[0][:, 0]  # Fallback für tuple-Outputs
         # Compute logits
         logits = self.paraphrase_classifier(cls_embedding)
         return logits.squeeze(-1)
@@ -392,8 +396,9 @@ def train_multitask(args):
                 train_loss += loss.item()
                 num_batches += 1
                 
-                if num_batches > 5:
-                    break
+                #if num_batches > 5:
+                    #break
+
             
         if args.task == "etpc" or args.task == "multitask":
             # Trains the model on the etpc dataset
