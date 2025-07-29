@@ -187,23 +187,12 @@ class MultitaskBERT(nn.Module):
         attention_mask = torch.nn.utils.rnn.pad_sequence(
             combined_attention_masks, batch_first=True, padding_value=0)
 
-        outputs = self.bert(
-            input_ids=input_ids,
-            attention_mask=attention_mask
-        )
-
-        # [CLS]-Token extrahieren
-        if isinstance(outputs, dict):
-            cls_embedding = outputs["last_hidden_state"][:, 0]  # Shape: [batch_size, hidden_size]
-        else:
-            cls_embedding = outputs[0][:, 0]  # Fallback für tuple-Outputs
-
-        # Dropout anwenden (optional, aber empfohlen)
-        #cls_embedding = self.dropout(cls_embedding)
-
-        # Paraphrase-Logits berechnen
-        logits = self.paraphrase_classifier(cls_embedding)  # Shape: [batch_size, 1]
-        return logits.squeeze(-1)  # Shape: [batch_size]
+        # Get embeddings using forward()
+        cls_embedding = self.forward(input_ids, attention_mask)
+        
+        # Compute logits
+        logits = self.paraphrase_classifier(cls_embedding)
+        return logits.squeeze(-1)
     
 
     def predict_paraphrase_types(
