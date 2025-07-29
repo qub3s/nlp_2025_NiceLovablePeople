@@ -187,7 +187,6 @@ class MultitaskBERT(nn.Module):
         attention_mask = torch.nn.utils.rnn.pad_sequence(
             combined_attention_masks, batch_first=True, padding_value=0)
 
-        # BERT-Ausgabe
         outputs = self.bert(
             input_ids=input_ids,
             attention_mask=attention_mask

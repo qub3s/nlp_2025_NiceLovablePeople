@@ -12,7 +12,7 @@ Georg Eckardt: (gitname) <br/>
 
 Hamza Ahmed Siddiqui: hamzasiddiqui10 <br/>
 
-Amon Pönitzsch: (gitname) <br/>
+Amon Pönitzsch: 4m0n <br/>
 
 Leonardo Christian da Camara Silva: (gitname) <br/>
 
@@ -85,6 +85,7 @@ Hamza Ahmed Siddiqui:
 - Stanford Sentiment Treebank (SST) - Sentiment analysis
 
 Amon Pönitzsch:
+- paraphrase detection (QQP)
 
 Leonardo Christian da Camara Silva: 
   
@@ -116,19 +117,19 @@ The model finished training in the 6th epoch with a dev accuracy within 2 standa
 **Hyperparameters:**
 - mode: `finetune`
 
-- epochs: `20`
+- epochs: `1`
 
 - learning rate: `8e-5`
 
 - optimizer: `AdamW`
 
-- dropout rate: 
+- dropout rate: `0.1`
 
 - batch size: `64`
 
-- ... 
 
 **Training results:**
+- Dev Accuracy Finetuning: `0.868`
 
 ### Semantic Textual Similarity (STS) - Measuring text meaning similarity
 **Hyperparameters:**
