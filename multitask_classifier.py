@@ -81,21 +81,16 @@ class MultitaskBERT(nn.Module):
         #self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
 
-        # Paraphrase type detection (ETPC)
-        self.paraphrase_type_classifier = nn.Sequential(
-        nn.Dropout(0.3),
-        nn.Linear(BERT_HIDDEN_SIZE, 4 * BERT_HIDDEN_SIZE),
-        nn.GELU(),
-        nn.Dropout(0.3),
-        nn.Linear(4 * BERT_HIDDEN_SIZE, 4 * BERT_HIDDEN_SIZE),
-        nn.GELU(),
-        nn.Dropout(0.3),
-        nn.Linear(4 * BERT_HIDDEN_SIZE, 2 * BERT_HIDDEN_SIZE),
-        nn.GELU(),
-        nn.Dropout(0.3),
-        nn.Linear(2 * BERT_HIDDEN_SIZE, 26)
-    )
+        # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(0.3)
+        self.paraphrase_type_classifier = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(BERT_HIDDEN_SIZE, 4*BERT_HIDDEN_SIZE),
+            nn.GELU(),
+            nn.Dropout(0.3),
+            nn.Linear(4*BERT_HIDDEN_SIZE, 26)
+        )
+        
     
 
     def forward(self, input_ids, attention_mask):
@@ -392,14 +387,14 @@ def train_multitask(args):
 
     if args.task == "etpc":
         # Specific parameters for ETPC
-        lr = 1e-5
+        lr = 2e-5
         optimizer = AdamW(
             model.parameters(),
             lr=lr,
             weight_decay=0.01,  # L2 regularization
             correct_bias=False,
         )
-        max_grad_norm = 1  # Gradient clipping
+        max_grad_norm = 1.0  # Gradient clipping
     else:
         # Default optimizer
         lr = args.lr
