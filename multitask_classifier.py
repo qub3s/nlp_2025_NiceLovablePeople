@@ -42,32 +42,6 @@ def seed_everything(seed=11711):
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
-# Residual block for the ETPC task
-class ResidualBlock(nn.Module):
-    def __init__(self, in_features, out_features, dropout_rate=0.3):
-        super().__init__()
-        self.linear = nn.Linear(in_features, out_features)
-        self.bn = nn.BatchNorm1d(out_features)
-        self.activation = nn.GELU()
-        self.dropout = nn.Dropout(dropout_rate)
-        
-        # The shortcut connection
-        if in_features != out_features:
-            self.shortcut = nn.Sequential(
-                nn.Linear(in_features, out_features),
-                nn.BatchNorm1d(out_features)
-            )
-        else:
-            self.shortcut = nn.Identity()
-    
-    def forward(self, x):
-        residual = self.shortcut(x)
-        out = self.linear(x)
-        out = self.bn(out)
-        out = self.activation(out)
-        out = self.dropout(out)
-        return out + residual
-
 
 class MultitaskBERT(nn.Module):
     """
@@ -109,17 +83,17 @@ class MultitaskBERT(nn.Module):
 
         # Paraphrase type detection (ETPC)
         self.paraphrase_type_classifier = nn.Sequential(
-        
-        ResidualBlock(BERT_HIDDEN_SIZE, 4*BERT_HIDDEN_SIZE),
-        ResidualBlock(4*BERT_HIDDEN_SIZE, 8*BERT_HIDDEN_SIZE),
-        
-        ResidualBlock(8*BERT_HIDDEN_SIZE, 8*BERT_HIDDEN_SIZE),
-        ResidualBlock(8*BERT_HIDDEN_SIZE, 8*BERT_HIDDEN_SIZE),
-        
-        ResidualBlock(8*BERT_HIDDEN_SIZE, 4*BERT_HIDDEN_SIZE),
-        ResidualBlock(4*BERT_HIDDEN_SIZE, 2*BERT_HIDDEN_SIZE),
-        
-        nn.Linear(2*BERT_HIDDEN_SIZE, 26)
+        nn.Dropout(0.3),
+        nn.Linear(BERT_HIDDEN_SIZE, 4 * BERT_HIDDEN_SIZE),
+        nn.GELU(),
+        nn.Dropout(0.3),
+        nn.Linear(4 * BERT_HIDDEN_SIZE, 4 * BERT_HIDDEN_SIZE),
+        nn.GELU(),
+        nn.Dropout(0.3),
+        nn.Linear(4 * BERT_HIDDEN_SIZE, 2 * BERT_HIDDEN_SIZE),
+        nn.GELU(),
+        nn.Dropout(0.3),
+        nn.Linear(2 * BERT_HIDDEN_SIZE, 26)
     )
         self.paraphrase_type_dropout = nn.Dropout(0.3)
     
@@ -418,15 +392,14 @@ def train_multitask(args):
 
     if args.task == "etpc":
         # Specific parameters for ETPC
-        lr = 2e-5
+        lr = 1e-5
         optimizer = AdamW(
             model.parameters(),
             lr=lr,
             weight_decay=0.01,  # L2 regularization
             correct_bias=False,
-            eps=1e-8,  # Epsilon
         )
-        max_grad_norm = 0.5  # Gradient clipping
+        max_grad_norm = 1  # Gradient clipping
     else:
         # Default optimizer
         lr = args.lr
