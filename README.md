@@ -106,7 +106,9 @@ For the baselines we reached the following results with the described hyperparam
 
 - batch size: `64`
 
-- Best dev Accuracy: `0.530`
+- Accuracies Epoch 6: `train :: 0.908`, `dev :: 0.513`
+- Best dev Accuracy: `train :: 0.774`, `dev :: 0.530` (Achieved in epoch 4)
+The model finished training in the 6th epoch with a dev accuracy within 2 standard deviations of the baseline. The dev accuracy decreased after epoch 4 hinting at overfitting in training. We will tackle the overfitting problem with hyperparameter tuning in phase 2.
 
 **Training results:**
 
