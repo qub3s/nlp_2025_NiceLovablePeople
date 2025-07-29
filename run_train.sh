@@ -46,7 +46,7 @@ python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_d
 
 # Paraphrase Type Detection
 echo -e "\nStarting PTD\n"
-python bart_detection --use_gpu
+python bart_detection.py --use_gpu
 
 # Paraphrase Generation
 echo -e "\nStarting PG\n"
