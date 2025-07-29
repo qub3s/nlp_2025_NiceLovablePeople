@@ -10,7 +10,7 @@ Esther Hagenkort: esthako/GOESTERN-1006113 <br/>
 
 Georg Eckardt: (gitname) <br/>
 
-Hamza Ahmed Siddiqui: (gitname) <br/>
+Hamza Ahmed Siddiqui: hamzasiddiqui10 <br/>
 
 Amon Pönitzsch: (gitname) <br/>
 
@@ -81,6 +81,8 @@ Georg Eckardt:
 - paraphrase type detection
 
 Hamza Ahmed Siddiqui:
+- bert.py
+- Stanford Sentiment Treebank (SST) - Sentiment analysis
 
 Amon Pönitzsch:
 
@@ -94,17 +96,17 @@ For the baselines we reached the following results with the described hyperparam
 **Hyperparameters:**
 - mode: `finetune`
 
-- epochs: `20`
+- epochs: `6`
 
-- learning rate: `8e-5`
+- learning rate: `1e-05`
 
 - optimizer: `AdamW`
 
-- dropout rate: 
+- dropout rate: `0.25`
 
 - batch size: `64`
 
-- ... 
+- Best dev Accuracy: `0.530`
 
 **Training results:**
 
