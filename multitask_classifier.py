@@ -261,7 +261,7 @@ class MultitaskBERT(nn.Module):
         cls_embedding = self.paraphrase_type_dropout(cls_embedding)
         logits = self.paraphrase_type_classifier(cls_embedding)
 
-        return logits.clamp(min=-10, max=10)
+        return logits
     
 
 def save_model(model, optimizer, args, config, filepath):
@@ -526,14 +526,10 @@ def train_multitask(args):
 
                 optimizer.zero_grad()
                 logits = model.predict_paraphrase_types(b_ids1, b_mask1, b_ids2, b_mask2)
+                
                 loss = F.binary_cross_entropy_with_logits(logits, b_labels)
-
-                if config.option == "finetune":
-                    loss.backward()
-                    # Apply gradient clipping for ETPC
-                    if max_grad_norm is not None:
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-                    optimizer.step()
+                loss.backward()
+                optimizer.step()
 
                 train_loss += loss.item()
                 num_batches += 1
