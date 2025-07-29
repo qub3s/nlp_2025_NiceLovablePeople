@@ -139,25 +139,8 @@ class MultitaskBERT(nn.Module):
         """
         device = input_ids_1.device
         
-        # concatenate the inputs with a SEP token in between
-        combined_input_ids = []
-        combined_attention_masks = []
-        
-        for i in range(input_ids_1.size(0)):
-            new_input = torch.cat([
-                input_ids_1[i],
-                torch.tensor([102], device=device), 
-                input_ids_2[i]
-            ])
-            
-            new_mask = torch.cat([
-                attention_mask_1[i],
-                torch.tensor([1], device=device),
-                attention_mask_2[i]
-            ])
-            
-            combined_input_ids.append(new_input)
-            combined_attention_masks.append(new_mask)
+        combined_input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
+        combined_attention_masks = torch.cat([attention_mask_1, attention_mask_2], dim=1)
         
         # Pad sequences
         input_ids = torch.nn.utils.rnn.pad_sequence(
@@ -167,11 +150,8 @@ class MultitaskBERT(nn.Module):
         
         # Get embeddings
         outputs = self.forward(input_ids=input_ids, attention_mask=attention_mask)
+        cls_embedding = outputs["last_hidden_state"][:, 0] 
 
-        if isinstance(outputs, dict):
-            cls_embedding = outputs["last_hidden_state"][:, 0]  # Shape: [batch_size, hidden_size]
-        else:
-            cls_embedding = outputs[0][:, 0]  # Fallback für tuple-Outputs
         # Compute logits
         logits = self.paraphrase_classifier(cls_embedding)
         return logits.squeeze(-1)
@@ -397,7 +377,7 @@ def train_multitask(args):
                 num_batches += 1
                 
                 #if num_batches > 5:
-                    #break
+                #    break
 
             
         if args.task == "etpc" or args.task == "multitask":
