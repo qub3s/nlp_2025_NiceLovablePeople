@@ -150,15 +150,13 @@ The model finished training in the 6th epoch with a dev accuracy within 2 standa
 
 ### Paraphrase Type Detection (PTD) - Identifying paraphrase types and relationships
 **Hyperparameters:**
-- mode: `finetune`
+- epochs: `10`
 
-- epochs: `20`
-
-- learning rate: `8e-5`
+- learning rate: `1e-5`
 
 - optimizer: `AdamW`
 
-- dropout rate: 
+- dropout rate: `0.1`
 
 - batch size: `64`
 
