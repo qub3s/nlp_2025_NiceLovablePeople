@@ -37,3 +37,7 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 echo -e "\nStarting QQP\n"
 python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=1
 
+# first run with new forward pass: 10117152
+# second run with way shorter multitask: 10117251
+
+# fix init method classifier doubleing 
