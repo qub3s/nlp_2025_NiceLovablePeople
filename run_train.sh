@@ -34,8 +34,8 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 # Run the script:
 # ETPC
 echo -e "\nStarting SST\n"
-python -u multitask_classifier.py --use_gpu --option finetune --task etpc --hidden_dropout_prob 0.25 --epochs=10
+python -u multitask_classifier.py --use_gpu --option finetune --task etpc --hidden_dropout_prob 0.25 --epochs=50
 
 # STS
 echo -e "\nStarting STS\n"
-python -u multitask_classifier.py --use_gpu --option finetune --task sts --hidden_dropout_prob 0.25 --epochs=7
+python -u multitask_classifier.py --use_gpu --option finetune --task sts --hidden_dropout_prob 0.25 --epochs=9
