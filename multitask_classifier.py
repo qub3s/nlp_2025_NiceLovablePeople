@@ -82,9 +82,15 @@ class MultitaskBERT(nn.Module):
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
 
         # Paraphrase type detection
-        self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 256), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob), nn.Linear(256, 26))
-
+        self.paraphrase_type_dropout = nn.Dropout(0.3)
+        self.paraphrase_type_classifier = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(BERT_HIDDEN_SIZE, 4*BERT_HIDDEN_SIZE),
+            nn.GELU(),
+            nn.Dropout(0.3),
+            nn.Linear(4*BERT_HIDDEN_SIZE, 26)
+        )
+        
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
 
@@ -95,6 +101,13 @@ class MultitaskBERT(nn.Module):
         # (e.g., by adding other layers).
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         return outputs["pooler_output"]
+
+    def forward_etpc(self, input_ids, attention_mask):
+        """Use last hidden state instead of pooler output"""
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        last_hidden_state = outputs["last_hidden_state"]
+        cls_embedding = last_hidden_state[:, 0]
+        return cls_embedding
     
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
@@ -208,7 +221,7 @@ class MultitaskBERT(nn.Module):
         # Paraphrase-Logits berechnen
         logits = self.paraphrase_classifier(cls_embedding)  # Shape: [batch_size, 1]
         return logits.squeeze(-1)  # Shape: [batch_size]
-    
+
     def predict_paraphrase_types(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
         Given a batch of pairs of sentences, outputs logits for detecting the paraphrase types.
@@ -217,25 +230,15 @@ class MultitaskBERT(nn.Module):
         during evaluation, and handled as a logit by the appropriate loss function.
         Dataset: ETPC
         """
-        # Combine inputs in BERT's expected format: [CLS] sent1 [SEP] sent2 [SEP]
-        input_ids = torch.cat([
-            input_ids_1[:, :-1],  # Remove SEP from first sentence
-            input_ids_2[:, 1:],   # Remove CLS from second sentence
-        ], dim=1)
+        input_ids = torch.cat([input_ids_1[:, :-1], input_ids_2[:, 1:]], dim=1)
+        attention_mask = torch.cat([attention_mask_1[:, :-1], attention_mask_2[:, 1:]], dim=1)
         
-        attention_mask = torch.cat([
-            attention_mask_1[:, :-1],
-            attention_mask_2[:, 1:],
-        ], dim=1)
+        cls_embedding = self.forward_etpc(input_ids, attention_mask)
         
-        # Get BERT outputs
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        pooled_output = outputs["pooler_output"]
-        
-        # Pass through classifier
-        logits = self.paraphrase_type_classifier(pooled_output)
-        return logits
+        cls_embedding = self.paraphrase_type_dropout(cls_embedding)
+        logits = self.paraphrase_type_classifier(cls_embedding)
 
+        return logits.clamp(min=-10, max=10)
 
 def save_model(model, optimizer, args, config, filepath):
     save_info = {
@@ -379,8 +382,22 @@ def train_multitask(args):
     model = MultitaskBERT(config)
     model = model.to(device)
 
-    lr = args.lr
-    optimizer = AdamW(model.parameters(), lr=lr)
+    if args.task == "etpc":
+        # Specific parameters for ETPC
+        lr = 2e-5  # Typically good for BERT fine-tuning
+        optimizer = AdamW(
+            model.parameters(),
+            lr=lr,
+            weight_decay=0.01,  # L2 regularization
+            correct_bias=False  # Don't correct bias in AdamW
+        )
+        max_grad_norm = 1.0  # For gradient clipping
+    else:
+        # Default optimizer for other tasks
+        lr = args.lr
+        optimizer = AdamW(model.parameters(), lr=lr)
+
+
     best_dev_acc = float("-inf")
 
     ## Training loop
@@ -469,7 +486,7 @@ def train_multitask(args):
                 num_batches += 1
         
         # ETPC training
-        if args.task == "etpc" or args.task == "multitask":
+        if args.task == "etpc":
             for batch in tqdm(
                 etpc_train_dataloader,
                 desc=f"train-etpc-{epoch+1:02}",
@@ -489,10 +506,14 @@ def train_multitask(args):
 
                 if config.option == "finetune":
                     loss.backward()
+                    # Apply gradient clipping for ETPC
+                    if max_grad_norm is not None:
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
                     optimizer.step()
 
                 train_loss += loss.item()
                 num_batches += 1
+        
 
         train_loss = train_loss / num_batches
 
