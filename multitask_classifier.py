@@ -42,6 +42,30 @@ def seed_everything(seed=11711):
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
+class ResidualBlock(nn.Module):
+    def __init__(self, in_features, out_features, dropout_rate=0.3):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features)
+        self.bn = nn.BatchNorm1d(out_features)
+        self.activation = nn.GELU()
+        self.dropout = nn.Dropout(dropout_rate)
+        
+        # Shortcut connection
+        if in_features != out_features:
+            self.shortcut = nn.Sequential(
+                nn.Linear(in_features, out_features),
+                nn.BatchNorm1d(out_features)
+            )
+        else:
+            self.shortcut = nn.Identity()
+    
+    def forward(self, x):
+        residual = self.shortcut(x)
+        out = self.linear(x)
+        out = self.bn(out)
+        out = self.activation(out)
+        out = self.dropout(out)
+        return out + residual
 
 class MultitaskBERT(nn.Module):
     """
@@ -84,11 +108,8 @@ class MultitaskBERT(nn.Module):
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(0.3)
         self.paraphrase_type_classifier = nn.Sequential(
-            nn.Dropout(0.3),
-            nn.Linear(BERT_HIDDEN_SIZE, 4*BERT_HIDDEN_SIZE),
-            nn.GELU(),
-            nn.Dropout(0.3),
-            nn.Linear(4*BERT_HIDDEN_SIZE, 26)
+            ResidualBlock(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE),
+            nn.Linear(BERT_HIDDEN_SIZE, 26)
         )
         
     
