@@ -81,7 +81,7 @@ Georg Eckardt:
 - paraphrase type detection
 
 Hamza Ahmed Siddiqui:
-- bert.py
+- bert.py (revise, comment)
 - Stanford Sentiment Treebank (SST) - Sentiment analysis
 
 Amon Pönitzsch:
