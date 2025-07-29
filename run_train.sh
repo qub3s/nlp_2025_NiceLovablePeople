@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=run_all
-#SBATCH -t 00:20:00                  # estimated time # TODO: adapt to your needs
+#SBATCH -t 00:40:00                  # estimated time # TODO: adapt to your needs
 #SBATCH -p grete:shared              # the partition you are training on (i.e., which nodes), for nodes see sinfo -p grete:shared --format=%N,%G
 #SBATCH -G A100:1                    # take 1 GPU, see https://docs.hpc.gwdg.de/compute_partitions/gpu_partitions/index.html for more options
 #SBATCH --mem-per-gpu=8G             # setting the right constraints for the splitted gpu partitions
@@ -35,4 +35,4 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # STS
 echo -e "\nStarting ETPC\n"
-python -u multitask_classifier.py --use_gpu --option finetune --task etpc --epochs=100
+python -u multitask_classifier.py --use_gpu --option finetune --task etpc --epochs=50 --lr 2e-5

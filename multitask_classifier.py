@@ -42,6 +42,32 @@ def seed_everything(seed=11711):
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
+# Residual block for the ETPC task
+class ResidualBlock(nn.Module):
+    def __init__(self, in_features, out_features, dropout_rate=0.3):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features)
+        self.bn = nn.BatchNorm1d(out_features)
+        self.activation = nn.GELU()
+        self.dropout = nn.Dropout(dropout_rate)
+        
+        # The shortcut connection
+        if in_features != out_features:
+            self.shortcut = nn.Sequential(
+                nn.Linear(in_features, out_features),
+                nn.BatchNorm1d(out_features)
+            )
+        else:
+            self.shortcut = nn.Identity()
+    
+    def forward(self, x):
+        residual = self.shortcut(x)
+        out = self.linear(x)
+        out = self.bn(out)
+        out = self.activation(out)
+        out = self.dropout(out)
+        return out + residual
+
 
 class MultitaskBERT(nn.Module):
     """
@@ -81,16 +107,23 @@ class MultitaskBERT(nn.Module):
         #self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
 
-        # Paraphrase type detection
-        self.paraphrase_type_dropout = nn.Dropout(0.3)
+        # Paraphrase type detection (ETPC)
         self.paraphrase_type_classifier = nn.Sequential(
-            nn.Dropout(0.3),
-            nn.Linear(BERT_HIDDEN_SIZE, 4*BERT_HIDDEN_SIZE),
-            nn.GELU(),
-            nn.Dropout(0.3),
-            nn.Linear(4*BERT_HIDDEN_SIZE, 26)
-        )
         
+        ResidualBlock(BERT_HIDDEN_SIZE, 4*BERT_HIDDEN_SIZE),
+        ResidualBlock(4*BERT_HIDDEN_SIZE, 8*BERT_HIDDEN_SIZE),
+        
+        ResidualBlock(8*BERT_HIDDEN_SIZE, 8*BERT_HIDDEN_SIZE),
+        ResidualBlock(8*BERT_HIDDEN_SIZE, 8*BERT_HIDDEN_SIZE),
+        
+        ResidualBlock(8*BERT_HIDDEN_SIZE, 4*BERT_HIDDEN_SIZE),
+        ResidualBlock(4*BERT_HIDDEN_SIZE, 2*BERT_HIDDEN_SIZE),
+        
+        nn.Linear(2*BERT_HIDDEN_SIZE, 26)
+    )
+        self.paraphrase_type_dropout = nn.Dropout(0.3)
+    
+
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
 
@@ -101,9 +134,9 @@ class MultitaskBERT(nn.Module):
         # (e.g., by adding other layers).
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         return outputs["pooler_output"]
-
+    
     def forward_etpc(self, input_ids, attention_mask):
-        """Use last hidden state instead of pooler output"""
+        """Use last hidden state instead of pooler output for the etpc datase."""
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         last_hidden_state = outputs["last_hidden_state"]
         cls_embedding = last_hidden_state[:, 0]
@@ -239,6 +272,7 @@ class MultitaskBERT(nn.Module):
         logits = self.paraphrase_type_classifier(cls_embedding)
 
         return logits.clamp(min=-10, max=10)
+    
 
 def save_model(model, optimizer, args, config, filepath):
     save_info = {
@@ -338,7 +372,7 @@ def train_multitask(args):
     # ETPC dataset
     elif args.task == "etpc" or args.task == "multitask":
 
-        # Train and dev split
+        # Train and dev split as here is no dev dataset given
         train_raw, dev_raw = train_test_split(
             etpc_train_data, 
             test_size=0.2,
@@ -384,16 +418,17 @@ def train_multitask(args):
 
     if args.task == "etpc":
         # Specific parameters for ETPC
-        lr = 2e-5  # Typically good for BERT fine-tuning
+        lr = 2e-5
         optimizer = AdamW(
             model.parameters(),
             lr=lr,
             weight_decay=0.01,  # L2 regularization
-            correct_bias=False  # Don't correct bias in AdamW
+            correct_bias=False,
+            eps=1e-8,  # Epsilon
         )
-        max_grad_norm = 1.0  # For gradient clipping
+        max_grad_norm = 0.5  # Gradient clipping
     else:
-        # Default optimizer for other tasks
+        # Default optimizer
         lr = args.lr
         optimizer = AdamW(model.parameters(), lr=lr)
 
