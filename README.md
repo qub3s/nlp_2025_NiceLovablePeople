@@ -1,7 +1,5 @@
 # DNLP SS25 Final Project 
 
-  
-
 <div align="left">
 
 <b> NiceLoveablePeople </b> <br/>
@@ -19,62 +17,23 @@ Leonardo Christian da Camara Silva: (gitname) <br/>
 </div>
 
   
-
 ## Introduction
-TODO
-This repository is our baseline implementation of the project for the Deep Learning for Natural Language Processing class at the University of Göttingen. TODO add class
+This repository is our baseline implementation of the project for the model M.Inf.2202: Deep Learning for Natural Language Processing at the University of Göttingen by the GippLab.
 
-TODO: AI card
-
-Which parts are included, No bonus task have been commited. Who did what tasks, what baseline percentages have been reached.
-A sentence about solutions
-
-
-
-A pretrained
-
-BERT ([BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding](https://arxiv.org/abs/1810.04805))
-
-model was used as the basis for our experiments. The model was fine-tuned on the three tasks using a multitask learning
-
-approach. The model was trained on the three tasks simultaneously, with a single shared BERT encoder and three separate
-
-task-specific classifiers.
-
-  
-
-## Requirements
-TODO
-  
-
-To install requirements and all dependencies using conda, run:
-
-  
-
-```sh
-
-conda env create -f environment.yml
-
-```
-
-  
-
-The environment is activated with `conda activate dnlp2`.
-
-Additionally, the POS and NER tags need to be downloaded. This can be done by running `python -m spacy download en_core_web_sm`.
-
-  
-
-Alternatively, use the provided script `setup.sh`.
-
-The script will create a new conda environment called `dnlp` and install all required packages.
+Aditionally to completing the bert implementation and the optimizer, the following tasks have been completed:
+- Stanford Sentiment Treebank (SST) - Sentiment analysis
+- Quora Question Pairs (QQP) - Question similarity
+- Semantic Textual Similarity (STS) - Measuring text meaning similarity
+- Paraphrase Type Detection (PTD) - Identifying paraphrase types and relationships
+- Paraphrase Type Generation (PTG) - Generating diverse paraphrase types
+- bonus: Paraphrase Type Detection with Bert (PTD-Bert) - Identifying paraphrase types and relationships
 
 ## Implementation & Contribution
 We followed the instructions and adapted hyperparameters when needed to avoid overfitting.
 
 Esther Hagenkort: 
 - bert.py (revise, comment)
-- bonus task: bert etpc paraphrase type detection (debugging)
+- bonus: paraphrase type detection with bert (PTD-bert) (debugging)
 - Paraphrase Type Generation (PTG)
 
 Georg Eckardt: 
@@ -182,6 +141,18 @@ Also tested 10 epochs and a batch size of 128 with no significant improvements, 
 
 - batch size: `32`
 
+### Bonus: Paraphrase Type Detection with Bert (PTD-bert) - Identifying paraphrase types and relationships
+
+**Hyperparameters:**
+- epochs: `50`
+
+- learning rate: `2e-5`
+
+- eps = `1e-8`
+
+- optimizer: `AdamW`
+
+- batch size: `64`
 
 ### Grete Cluster
 
