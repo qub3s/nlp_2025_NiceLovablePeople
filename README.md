@@ -94,7 +94,7 @@ The model finished training in the 6th epoch with a dev accuracy within 2 standa
 
 
 **Training results:**
-- Dev Accuracy Finetuning: `0.868`
+- Dev Accuracy Finetuning: `0.862`
 
 ### Semantic Textual Similarity (STS) - Measuring text meaning similarity
 **Hyperparameters:**

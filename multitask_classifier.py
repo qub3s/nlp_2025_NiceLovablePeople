@@ -72,15 +72,15 @@ class MultitaskBERT(nn.Module):
         # The final BERT embedding is the hidden state of [CLS] token which I will get 
         # as dict['pooler_output'] from output of BertModel.forward().
         self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
+        self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
         # STS Regression Head
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
 
-        # Add layers for sentiment classification
-        self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
-        #self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
+        # QQP
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
+        self.paraphrase_classifier = nn.Dropout(config.hidden_dropout_prob)
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -97,7 +97,7 @@ class MultitaskBERT(nn.Module):
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        return outputs["pooler_output"]
+        return outputs["pooler_output"] 
     
     def forward_etpc(self, input_ids, attention_mask):
         """Use last hidden state for the etpc datase."""
@@ -150,76 +150,16 @@ class MultitaskBERT(nn.Module):
         during evaluation, and handled as a logit by the appropriate loss function.
         Dataset: Quora
         """
-        device = input_ids_1.device
-        sep_token_id = 102  # [SEP] token
-        cls_token_id = 101  # [CLS] token
 
-        # Process each sentence pair
-        combined_input_ids = []
-        combined_attention_masks = []
-        
-        for i in range(input_ids_1.size(0)):
-            # Process first sentence (remove trailing [SEP] if exists)
-            seq1 = input_ids_1[i]
-            if seq1[-1] == sep_token_id:
-                seq1 = seq1[:-1]
-                mask1 = attention_mask_1[i][:-1]
-            else:
-                mask1 = attention_mask_1[i]
+        input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
+        attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
+        mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
+        return self.paraphrase_classifier(mean_embedding).squeeze(-1)
+    
 
-            # Process second sentence (remove [CLS] and trailing [SEP])
-            seq2 = input_ids_2[i]
-            if seq2[0] == cls_token_id:
-                seq2 = seq2[1:]
-                mask2 = attention_mask_2[i][1:]
-            if seq2[-1] == sep_token_id:
-                seq2 = seq2[:-1]
-                mask2 = mask2[:-1]
-
-            # Combine with [SEP] tokens
-            new_input = torch.cat([
-                seq1,
-                torch.tensor([sep_token_id], device=device),
-                seq2,
-                torch.tensor([sep_token_id], device=device)
-            ])
-            
-            new_mask = torch.cat([
-                mask1,
-                torch.tensor([1], device=device),
-                mask2,
-                torch.tensor([1], device=device)
-            ])
-            
-            combined_input_ids.append(new_input)
-            combined_attention_masks.append(new_mask)
-
-        # Pad sequences
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            combined_input_ids, batch_first=True, padding_value=0)
-        attention_mask = torch.nn.utils.rnn.pad_sequence(
-            combined_attention_masks, batch_first=True, padding_value=0)
-
-        outputs = self.bert(
-            input_ids=input_ids,
-            attention_mask=attention_mask
-        )
-
-        # [CLS]-Token extrahieren
-        if isinstance(outputs, dict):
-            cls_embedding = outputs["last_hidden_state"][:, 0]  # Shape: [batch_size, hidden_size]
-        else:
-            cls_embedding = outputs[0][:, 0]  # Fallback für tuple-Outputs
-
-        # Dropout anwenden (optional, aber empfohlen)
-        #cls_embedding = self.dropout(cls_embedding)
-
-        # Paraphrase-Logits berechnen
-        logits = self.paraphrase_classifier(cls_embedding)  # Shape: [batch_size, 1]
-        return logits.squeeze(-1)  # Shape: [batch_size]
-
-    ## BONUS TASK
-    def predict_paraphrase_types(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+    def predict_paraphrase_types(
+        self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
+    ):
         """
         Given a batch of pairs of sentences, outputs logits for detecting the paraphrase types.
         There are 26 different types of paraphrases.
@@ -514,10 +454,12 @@ def train_multitask(args):
                 b_labels = b_labels.to(device)
 
                 optimizer.zero_grad()
-                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+                logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
                 loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
-                loss.backward()
-                optimizer.step()
+
+                if config.option == "finetune":
+                    loss.backward()
+                    optimizer.step()
 
                 train_loss += loss.item()
                 num_batches += 1
