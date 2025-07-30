@@ -137,7 +137,7 @@ class MultitaskBERT(nn.Module):
         during evaluation, and handled as a logit by the appropriate loss function.
         Dataset: Quora
         """
-        
+
         input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
         attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
         mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
@@ -355,10 +355,12 @@ def train_multitask(args):
                 b_labels = b_labels.to(device)
 
                 optimizer.zero_grad()
-                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+                logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
                 loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
-                loss.backward()
-                optimizer.step()
+
+                if config.option == "finetune":
+                    loss.backward()
+                    optimizer.step()
 
                 train_loss += loss.item()
                 num_batches += 1
