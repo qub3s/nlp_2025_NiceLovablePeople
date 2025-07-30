@@ -70,14 +70,14 @@ class MultitaskBERT(nn.Module):
         self.sentiment_classifier = nn.Linear(
             BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES # 768 -> 5
         )
+        # Add layers for sentiment classification
+        self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
         # STS Regression Head
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
-
-        # Add layers for sentiment classification
-        self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
+        
+        # paraphrase detection
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)  # Logit-Ausgabe
 
     def forward(self, input_ids, attention_mask):
@@ -89,7 +89,7 @@ class MultitaskBERT(nn.Module):
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        return outputs
+        return outputs["pooler_output"] 
     
 
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
@@ -140,8 +140,7 @@ class MultitaskBERT(nn.Module):
         
         input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
         attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
-        outputs = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
-        mean_embedding = outputs["last_hidden_state"].mean(dim=1)  
+        mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
         return self.paraphrase_classifier(mean_embedding).squeeze(-1)
     
 
@@ -364,8 +363,6 @@ def train_multitask(args):
                 train_loss += loss.item()
                 num_batches += 1
                 
-                #if num_batches > 5:
-                #    break
 
             
         if args.task == "etpc" or args.task == "multitask":
