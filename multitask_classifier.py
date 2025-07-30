@@ -168,16 +168,14 @@ class MultitaskBERT(nn.Module):
         Dataset: ETPC
         """
         # Concatenate the two sentences while avoiding duplicate special tokens
-        # This ensures proper merging without redundant special tokens
         input_ids = torch.cat([input_ids_1[:, :-1], input_ids_2[:, 1:]], dim=1)
         attention_mask = torch.cat([attention_mask_1[:, :-1], attention_mask_2[:, 1:]], dim=1)
 
         # Pass the concatenated input through the model to get embeddings
         cls_embedding = self.forward_etpc(input_ids, attention_mask)
-
         cls_embedding = self.paraphrase_type_dropout(cls_embedding)
         logits = self.paraphrase_type_classifier(cls_embedding)
-
+        
         return logits
     
 
@@ -200,7 +198,6 @@ def evaluate_etpc_f1(model, dataloader, device):
     """
     Evaluates the model on the ETPC dataset and computes F1 scores
     """
-
     model.eval()
     all_preds = []
     all_labels = []
@@ -210,13 +207,14 @@ def evaluate_etpc_f1(model, dataloader, device):
             b_mask1 = batch['attention_mask_1'].to(device)
             b_ids2 = batch['token_ids_2'].to(device)
             b_mask2 = batch['attention_mask_2'].to(device)
-            b_labels = batch['labels'].cpu().numpy()
+            b_labels = batch['labels'].float().cpu().numpy()
 
             logits = model.predict_paraphrase_types(b_ids1, b_mask1, b_ids2, b_mask2)
             preds = (torch.sigmoid(logits) > 0.5).cpu().numpy()
 
             all_preds.append(preds)
             all_labels.append(b_labels)
+    
     all_preds = np.vstack(all_preds)
     all_labels = np.vstack(all_labels)
     macro_f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
@@ -465,7 +463,7 @@ def train_multitask(args):
                 num_batches += 1
         
         ## BONUS TASK
-        # ETPC training
+        # etpc training
         if args.task == "etpc":
             for batch in tqdm(
                 etpc_train_dataloader,
@@ -482,7 +480,7 @@ def train_multitask(args):
 
                 optimizer.zero_grad()
                 logits = model.predict_paraphrase_types(b_ids1, b_mask1, b_ids2, b_mask2) # Orientation on the ETPC evaluation evaluation.py
-
+                    
                 loss = etpc_loss(logits, b_labels)
 
                 if config.option == "finetune":
