@@ -42,30 +42,30 @@ def seed_everything(seed=11711):
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
-class ResidualBlock(nn.Module):
-    def __init__(self, in_features, out_features, dropout_rate=0.3):
-        super().__init__()
-        self.linear = nn.Linear(in_features, out_features)
-        self.bn = nn.BatchNorm1d(out_features)
-        self.activation = nn.GELU()
-        self.dropout = nn.Dropout(dropout_rate)
+# class ResidualBlock(nn.Module):
+#     def __init__(self, in_features, out_features, dropout_rate=0.3):
+#         super().__init__()
+#         self.linear = nn.Linear(in_features, out_features)
+#         self.bn = nn.BatchNorm1d(out_features)
+#         self.activation = nn.GELU()
+#         self.dropout = nn.Dropout(dropout_rate)
         
-        # Shortcut connection
-        if in_features != out_features:
-            self.shortcut = nn.Sequential(
-                nn.Linear(in_features, out_features),
-                nn.BatchNorm1d(out_features)
-            )
-        else:
-            self.shortcut = nn.Identity()
+#         # Shortcut connection
+#         if in_features != out_features:
+#             self.shortcut = nn.Sequential(
+#                 nn.Linear(in_features, out_features),
+#                 nn.BatchNorm1d(out_features)
+#             )
+#         else:
+#             self.shortcut = nn.Identity()
     
-    def forward(self, x):
-        residual = self.shortcut(x)
-        out = self.linear(x)
-        out = self.bn(out)
-        out = self.activation(out)
-        out = self.dropout(out)
-        return out + residual
+#     def forward(self, x):
+#         residual = self.shortcut(x)
+#         out = self.linear(x)
+#         out = self.bn(out)
+#         out = self.activation(out)
+#         out = self.dropout(out)
+#         return out + residual
 
 class MultitaskBERT(nn.Module):
     """
@@ -108,11 +108,11 @@ class MultitaskBERT(nn.Module):
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(0.3)
         self.paraphrase_type_classifier = nn.Sequential(
-            ResidualBlock(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE),
+            nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE),
+            nn.ReLU(),
             nn.Linear(BERT_HIDDEN_SIZE, 26)
         )
-        
-    
+           
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
@@ -126,7 +126,7 @@ class MultitaskBERT(nn.Module):
         return outputs["pooler_output"]
     
     def forward_etpc(self, input_ids, attention_mask):
-        """Use last hidden state instead of pooler output for the etpc datase."""
+        """Use last hidden state for the etpc datase."""
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         last_hidden_state = outputs["last_hidden_state"]
         cls_embedding = last_hidden_state[:, 0]
@@ -413,16 +413,17 @@ def train_multitask(args):
     model = MultitaskBERT(config)
     model = model.to(device)
 
+    etpc_loss = nn.BCELoss()
+
     if args.task == "etpc":
         # Specific parameters for ETPC
         lr = 2e-5
         optimizer = AdamW(
             model.parameters(),
             lr=lr,
-            weight_decay=0.01,  # L2 regularization
+            weight_decay=0.01,  # L2
             correct_bias=False,
         )
-        max_grad_norm = 1.0  # Gradient clipping
     else:
         # Default optimizer
         lr = args.lr
@@ -532,9 +533,10 @@ def train_multitask(args):
                 )
 
                 optimizer.zero_grad()
-                logits = model.predict_paraphrase_types(b_ids1, b_mask1, b_ids2, b_mask2)
+                logits = model.predict_paraphrase_types(b_ids1, b_mask1, b_ids2, b_mask2) # Orientation on the ETPC evaluation evaluation.py
+                y_pred = logits.sigmoid().round()
 
-                loss = F.binary_cross_entropy_with_logits(logits, b_labels)
+                loss = etpc_loss(y_pred, b_labels)
                 loss.backward()
                 optimizer.step()
 
