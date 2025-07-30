@@ -56,6 +56,7 @@ Leonardo Christian da Camara Silva:
 
 ## Results Part 1
 For the baselines we reached the following results with the described hyperparameters and metrics.
+We noticed that the results changed from run to run even if the hyperparameters were not changed. We therefore assume that something with the seed is not working.
 
 ### Stanford Sentiment Treebank (SST) - Sentiment analysis
 **Hyperparameters:**
@@ -128,7 +129,7 @@ The model finished training in the 6th epoch with a dev accuracy within 2 standa
 **Training results:**
 
 ### Paraphrase Type Generation (PTG) - Generating diverse paraphrase types
-Also tested 10 epochs and a batch size of 128 with no significant improvements, so the lower values were chosen.
+Also tested 10 epochs and a batch size of 128 with no significant improvements.
 
 **Hyperparameters:**
 - epochs: `5`
@@ -155,42 +156,19 @@ Also tested 10 epochs and a batch size of 128 with no significant improvements, 
 - batch size: `64`
 
 ### Grete Cluster
-
 To run the tasks on the Grete cluster we adapted and used the `run_train.sh` script given to us.
-  
 
-## AI-Usage Card todo
-  
+## AI-Usage 
+AI (debugging) support such as copilot was used, a detailed AI-Usage card will be provided in the final report.
 
-Artificial Intelligence (AI) aided the development of this project. For transparency, we provide our [AI-Usage Card](./AI-Usage-Card.pdf/) at the top. The card is based on [https://ai-cards.org/](https://ai-cards.org/).
+## Acknowledgement
+The project description, partial implementation, and scripts were adapted from the default final project for the Stanford [CS 224N class](https://web.stanford.edu/class/cs224n/) developed by Gabriel Poesia, John, Hewitt, Amelie Byun, John Cho, and their (large) team (Thank you!)
 
-  
-
-## Acknowledgement TODO
-  
-
-The project description, partial implementation, and scripts were adapted from the default final project for the
-
-Stanford [CS 224N class](https://web.stanford.edu/class/cs224n/) developed by Gabriel Poesia, John, Hewitt, Amelie Byun,
-
-John Cho, and their (large) team (Thank you!)
-
-  
-
-The BERT implementation part of the project was adapted from the "minbert" assignment developed at Carnegie Mellon
-
-University's [CS11-711 Advanced NLP](http://phontron.com/class/anlp2021/index.html),
-
+The BERT implementation part of the project was adapted from the "minbert" assignment developed at Carnegie Mellon University's [CS11-711 Advanced NLP](http://phontron.com/class/anlp2021/index.html),
 created by Shuyan Zhou, Zhengbao Jiang, Ritam Dutt, Brendon Boldt, Aditya Veerubhotla, and Graham Neubig  (Thank you!)
 
-  
+Parts of the code are from the [`transformers`](https://github.com/huggingface/transformers) library ([Apache License 2.0](./LICENSE)).
 
-Parts of the code are from the [`transformers`](https://github.com/huggingface/transformers)
+Parts of the scripts and code were altered by [Jan Philip Wahle](https://jpwahle.com/) and [Terry Ruas](https://terryruas.com/).
 
-library ([Apache License 2.0](./LICENSE)).
-
-  
-
-Parts of the scripts and code were altered by [Jan Philip Wahle](https://jpwahle.com/)
-
-and [Terry Ruas](https://terryruas.com/).
+The project was modified by [Niklas Bauer](https://github.com/ItsNiklas/) for the 2025 DNLP course at the University of Göttingen.
