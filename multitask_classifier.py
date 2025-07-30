@@ -24,6 +24,7 @@ from evaluation import model_eval_multitask, test_model_multitask
 from optimizer import AdamW
 
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import f1_score
 
 TQDM_DISABLE = False
 
@@ -42,30 +43,6 @@ def seed_everything(seed=11711):
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
-# class ResidualBlock(nn.Module):
-#     def __init__(self, in_features, out_features, dropout_rate=0.3):
-#         super().__init__()
-#         self.linear = nn.Linear(in_features, out_features)
-#         self.bn = nn.BatchNorm1d(out_features)
-#         self.activation = nn.GELU()
-#         self.dropout = nn.Dropout(dropout_rate)
-        
-#         # Shortcut connection
-#         if in_features != out_features:
-#             self.shortcut = nn.Sequential(
-#                 nn.Linear(in_features, out_features),
-#                 nn.BatchNorm1d(out_features)
-#             )
-#         else:
-#             self.shortcut = nn.Identity()
-    
-#     def forward(self, x):
-#         residual = self.shortcut(x)
-#         out = self.linear(x)
-#         out = self.bn(out)
-#         out = self.activation(out)
-#         out = self.dropout(out)
-#         return out + residual
 
 class MultitaskBERT(nn.Module):
     """
@@ -108,12 +85,6 @@ class MultitaskBERT(nn.Module):
         # Paraphrase type detection
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
         self.paraphrase_type_dropout = nn.Dropout(0.3)
-
-        # self.paraphrase_type_classifier = nn.Sequential(
-        #     nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE),
-        #     nn.ReLU(),
-        #     nn.Linear(BERT_HIDDEN_SIZE, 26)
-        # )
            
 
     def forward(self, input_ids, attention_mask):
@@ -287,6 +258,29 @@ def save_model(model, optimizer, args, config, filepath):
     torch.save(save_info, filepath)
     print(f"Saving the model to {filepath}.")
 
+def evaluate_etpc_f1(model, dataloader, device):
+    model.eval()
+    all_preds = []
+    all_labels = []
+    with torch.no_grad():
+        for batch in dataloader:
+            b_ids1 = batch['token_ids_1'].to(device)
+            b_mask1 = batch['attention_mask_1'].to(device)
+            b_ids2 = batch['token_ids_2'].to(device)
+            b_mask2 = batch['attention_mask_2'].to(device)
+            b_labels = batch['labels'].cpu().numpy()
+
+            logits = model.predict_paraphrase_types(b_ids1, b_mask1, b_ids2, b_mask2)
+            preds = (torch.sigmoid(logits) > 0.5).cpu().numpy()
+
+            all_preds.append(preds)
+            all_labels.append(b_labels)
+    all_preds = np.vstack(all_preds)
+    all_labels = np.vstack(all_labels)
+    macro_f1 = f1_score(all_labels, all_preds, average='macro', zero_division=0)
+    micro_f1 = f1_score(all_labels, all_preds, average='micro', zero_division=0)
+    return macro_f1, micro_f1
+
 def train_multitask(args):
     os.makedirs("models", exist_ok=True)
 
@@ -394,6 +388,16 @@ def train_multitask(args):
             collate_fn=etpc_dev_dataset.collate_fn,
         )
 
+        ## Print label distribution for ETPC
+        train_labels = np.vstack([np.array(ex[2], dtype=np.float32) for ex in train_raw])
+        #dev_labels = np.vstack([np.array(ex[2], dtype=np.float32) for ex in dev_raw])
+        # print("ETPC train label distribution (mean per class):", train_labels.mean(axis=0))
+        # print("ETPC dev label distribution (mean per class):", dev_labels.mean(axis=0))
+
+        pos_freq = train_labels.mean(axis=0)
+        neg_freq = 1.0 - pos_freq
+        pos_weight = torch.tensor(neg_freq / (pos_freq + 1e-8), dtype=torch.float32).to(device)
+
 
     ## Initialize model
     config = {
@@ -415,8 +419,7 @@ def train_multitask(args):
     model = MultitaskBERT(config)
     model = model.to(device)
 
-    #etpc_loss = nn.BCELoss()
-    etpc_loss = nn.BCEWithLogitsLoss()
+    etpc_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight) # Loss for the etpc task
 
     if args.task == "etpc":
         # Specific parameters for ETPC
@@ -573,6 +576,10 @@ def train_multitask(args):
                 task=args.task,
             )
         )
+
+        if args.task == "etpc":
+            macro_f1, micro_f1 = evaluate_etpc_f1(model, etpc_dev_dataloader, device)
+            print(f"ETPC Dev Macro F1: {macro_f1:.3f}, Micro F1: {micro_f1:.3f}")
 
         train_acc, dev_acc = {
             "sst": (sst_train_acc, sst_dev_acc),
