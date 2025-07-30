@@ -66,7 +66,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     ### TODO
     #raise NotImplementedError
     lr = 1e-5
-    epochs = 5 
+    epochs = 5
     optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
     model.to(device)
 
