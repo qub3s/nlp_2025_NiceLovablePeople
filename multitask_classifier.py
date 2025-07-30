@@ -106,12 +106,14 @@ class MultitaskBERT(nn.Module):
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
 
         # Paraphrase type detection
+        self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
         self.paraphrase_type_dropout = nn.Dropout(0.3)
-        self.paraphrase_type_classifier = nn.Sequential(
-            nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE),
-            nn.ReLU(),
-            nn.Linear(BERT_HIDDEN_SIZE, 26)
-        )
+
+        # self.paraphrase_type_classifier = nn.Sequential(
+        #     nn.Linear(BERT_HIDDEN_SIZE, BERT_HIDDEN_SIZE),
+        #     nn.ReLU(),
+        #     nn.Linear(BERT_HIDDEN_SIZE, 26)
+        # )
            
 
     def forward(self, input_ids, attention_mask):
@@ -422,7 +424,7 @@ def train_multitask(args):
         optimizer = AdamW(
             model.parameters(),
             lr=lr,
-            weight_decay=0.01,  # L2
+            weight_decay=0.01,
             correct_bias=False,
         )
     else:
@@ -535,10 +537,9 @@ def train_multitask(args):
 
                 optimizer.zero_grad()
                 logits = model.predict_paraphrase_types(b_ids1, b_mask1, b_ids2, b_mask2) # Orientation on the ETPC evaluation evaluation.py
-                #y_pred = logits.sigmoid().round()
 
                 loss = etpc_loss(logits, b_labels)
-                
+
                 if config.option == "finetune":
                     loss.backward()
                     optimizer.step()
@@ -548,7 +549,6 @@ def train_multitask(args):
         
 
         train_loss = train_loss / num_batches
-
 
         quora_train_acc, _, _, sst_train_acc, _, _, sts_train_corr, _, _, etpc_train_acc, _, _ = (
             model_eval_multitask(
