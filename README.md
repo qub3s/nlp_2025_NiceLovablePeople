@@ -142,24 +142,39 @@ The model finished training in the 6th epoch with a dev accuracy within 2 standa
 - batch size: `32`
 **Training results:**
 - Paraphrase Generation: BLEU Score: `49.18`
+  
 ### Bonus: Paraphrase Type Detection with Bert (PTD-bert) - Identifying paraphrase types and relationships
 
 **Hyperparameters:**
-- epochs: `50`
+- epochs: `10`
 
-- learning rate: `2e-5`
+- learning rate: `1e-6`
 
 - eps = `1e-8`
 
 - optimizer: `AdamW`
 
-- batch size: `64`
+- batch size: `16`
+  
+**Training results:**
+  - Dev Accuracy `0.13`
+  - Dev Macro f1 `0.264`
+  - Dev Micro f1 `0.709`
+
+**Evaluation structure**
+The ETPC train label distribution (mean label value per class): 
+[0.138, 0.049, 0.048, 0.127, 0.179, 0.647, 0.109, 0.049, 0.001, 0.005, 0.198, 0.013, 0.041, 0.006, 0.017, 0.011, 0.112, 0.192, 0.018, 0.075, 0.764, 0.207, 0.092, 0.993, 0.164, 0.023]
+
+It indicates that most classes are very rare (mean values close to 0.01-0.05) and a few classes are very common (e.g. class 23 with 0.993). So it follows that we have severe class imbalance, so its hard to learn rare classes and therefore the standard accuracy (fraction of correct labels) might be missleading. Thats why I decided to also display the macro and micro F1.
+
+**Improvements**
+For the second part I will do hyperparameter finetuning to counter overfitting and find the best local minima. Also I will try to impliment the "Siamese + interaction" recipe used by DeBErta on ETPC from the GippLab group (Paraphrase Types for Generation and Detection, Wahle et al.) and other improvements from Chapter 7.
 
 ### Grete Cluster
 To run the tasks on the Grete cluster we adapted and used the `run_train.sh` script given to us.
 
 ## AI-Usage 
-AI (debugging) support such as copilot was used, a detailed AI-Usage card will be provided in the final report.
+AI (debugging) support such as ChatGPT were used, a detailed AI-Usage card will be provided in the final report.
 
 ## Acknowledgement
 The project description, partial implementation, and scripts were adapted from the default final project for the Stanford [CS 224N class](https://web.stanford.edu/class/cs224n/) developed by Gabriel Poesia, John, Hewitt, Amelie Byun, John Cho, and their (large) team (Thank you!)
