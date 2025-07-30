@@ -12,7 +12,7 @@ Hamza Ahmed Siddiqui: hamzasiddiqui10 <br/>
 
 Amon Pönitzsch: 4m0n <br/>
 
-Leonardo Christian da Camara Silva: (gitname) <br/>
+Leonardo Christian da Camara Silva: Dacasil <br/>
 
 </div>
 
@@ -48,7 +48,9 @@ Hamza Ahmed Siddiqui:
 Amon Pönitzsch:
 - paraphrase detection (QQP)
 
-Leonardo Christian da Camara Silva: 
+Leonardo Christian da Camara Silva:
+- Semantic Textual Similarity (STS)
+- bonus: paraphrase type detection with bert (PTD-bert)
   
 
 
@@ -97,19 +99,18 @@ The model finished training in the 6th epoch with a dev accuracy within 2 standa
 **Hyperparameters:**
 - mode: `finetune`
 
-- epochs: `20`
+- epochs: `10`
 
-- learning rate: `8e-5`
+- learning rate: `1e-5`
 
 - optimizer: `AdamW`
 
-- dropout rate: 
+- dropout rate: `0.25`
 
 - batch size: `64`
 
-- ... 
-
 **Training results:**
+- Dev Correlation STS Finetuning: `0.401`
 
 ### Paraphrase Type Detection (PTD) - Identifying paraphrase types and relationships
 **Hyperparameters:**
