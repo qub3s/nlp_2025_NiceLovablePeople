@@ -7,7 +7,7 @@
 #SBATCH --nodes=1                    # total number of nodes
 #SBATCH --ntasks=1                   # total number of tasks
 #SBATCH --cpus-per-task=8            # number cores per task
-#SBATCH --mail-type=l.dacamarasilva@stud.uni-goettingen.de       # send mail when job begins and ends
+#SBATCH --mail-type=all              # send mail when job begins and ends
 #SBATCH --output=./slurm_files/slurm-%x-%j.out     # where to write output, %x give job name, %j names job id
 #SBATCH --error=./slurm_files/slurm-%x-%j.err      # where to write slurm error
 
@@ -35,7 +35,7 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # ETPC
 echo -e "\nStarting ETPC\n"
-python -u multitask_classifier.py --use_gpu --option finetune --task etpc --epochs=50 --lr 2e-5
+python -u multitask_classifier.py --use_gpu --option finetune --task etpc --hidden_dropout_prob 0.25 --epochs=50 --lr 2e-5
 
 # SST
 echo -e "\nStarting SST\n"
