@@ -83,8 +83,9 @@ class MultitaskBERT(nn.Module):
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
 
         # Paraphrase type detection
+        self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
-        self.paraphrase_type_dropout = nn.Dropout(0.3)
+        
            
 
     def forward(self, input_ids, attention_mask):
@@ -218,6 +219,7 @@ class MultitaskBERT(nn.Module):
         logits = self.paraphrase_classifier(cls_embedding)  # Shape: [batch_size, 1]
         return logits.squeeze(-1)  # Shape: [batch_size]
 
+    ## BONUS TASK
     def predict_paraphrase_types(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
         Given a batch of pairs of sentences, outputs logits for detecting the paraphrase types.
@@ -227,18 +229,14 @@ class MultitaskBERT(nn.Module):
         Dataset: ETPC
         """
         # Concatenate the two sentences while avoiding duplicate special tokens
-        # Ensures proper merging without redundant special tokens
+        # This ensures proper merging without redundant special tokens
         input_ids = torch.cat([input_ids_1[:, :-1], input_ids_2[:, 1:]], dim=1)
         attention_mask = torch.cat([attention_mask_1[:, :-1], attention_mask_2[:, 1:]], dim=1)
 
-        # Pass the concatenated input through the model to get embeddings.
-        # - self.forward_etpc() processes the input and returns contextualized embeddings
-        # - cls_embedding is the embedding of the [CLS] token, used for classification
+        # Pass the concatenated input through the model to get embeddings
         cls_embedding = self.forward_etpc(input_ids, attention_mask)
 
         cls_embedding = self.paraphrase_type_dropout(cls_embedding)
-
-        # Compute logits for the 26 paraphrase types.
         logits = self.paraphrase_type_classifier(cls_embedding)
 
         return logits
@@ -258,7 +256,12 @@ def save_model(model, optimizer, args, config, filepath):
     torch.save(save_info, filepath)
     print(f"Saving the model to {filepath}.")
 
+## BONUS TASK
 def evaluate_etpc_f1(model, dataloader, device):
+    """
+    Evaluates the model on the ETPC dataset and computes F1 scores
+    """
+
     model.eval()
     all_preds = []
     all_labels = []
@@ -361,7 +364,8 @@ def train_multitask(args):
             batch_size=args.batch_size,
             collate_fn=sts_dev_data.collate_fn,
         )
-    
+
+    ## BONUS TASK
     # ETPC dataset
     elif args.task == "etpc" or args.task == "multitask":
 
@@ -415,7 +419,7 @@ def train_multitask(args):
     model = MultitaskBERT(config)
     model = model.to(device)
 
-    etpc_loss = nn.BCEWithLogitsLoss() # Loss for the etpc task
+    etpc_loss = nn.BCEWithLogitsLoss() # Loss for the etpc task (BONUS TASK)
 
     if args.task == "etpc":
         # Specific parameters for ETPC
@@ -519,6 +523,7 @@ def train_multitask(args):
                 train_loss += loss.item()
                 num_batches += 1
         
+        ## BONUS TASK
         # ETPC training
         if args.task == "etpc":
             for batch in tqdm(
@@ -573,6 +578,7 @@ def train_multitask(args):
             )
         )
 
+        ## BONUS TASK
         if args.task == "etpc":
             macro_f1, micro_f1 = evaluate_etpc_f1(model, etpc_dev_dataloader, device)
             print(f"ETPC Dev Macro F1: {macro_f1:.3f}, Micro F1: {micro_f1:.3f}")
