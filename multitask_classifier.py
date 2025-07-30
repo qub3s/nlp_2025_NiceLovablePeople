@@ -137,24 +137,12 @@ class MultitaskBERT(nn.Module):
         during evaluation, and handled as a logit by the appropriate loss function.
         Dataset: Quora
         """
-        device = input_ids_1.device
         
-        combined_input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
-        combined_attention_masks = torch.cat([attention_mask_1, attention_mask_2], dim=1)
-        
-        # Pad sequences
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            combined_input_ids, batch_first=True, padding_value=0)
-        attention_mask = torch.nn.utils.rnn.pad_sequence(
-            combined_attention_masks, batch_first=True, padding_value=0)
-        
-        # Get embeddings
-        outputs = self.forward(input_ids=input_ids, attention_mask=attention_mask)
-        cls_embedding = outputs["last_hidden_state"][:, 0] 
-
-        # Compute logits
-        logits = self.paraphrase_classifier(cls_embedding)
-        return logits.squeeze(-1)
+        input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
+        attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
+        outputs = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
+        mean_embedding = outputs["last_hidden_state"].mean(dim=1)  
+        return self.paraphrase_classifier(mean_embedding).squeeze(-1)
     
 
     def predict_paraphrase_types(
