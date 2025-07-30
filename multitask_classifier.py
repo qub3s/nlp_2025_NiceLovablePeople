@@ -538,8 +538,10 @@ def train_multitask(args):
                 #y_pred = logits.sigmoid().round()
 
                 loss = etpc_loss(logits, b_labels)
-                loss.backward()
-                optimizer.step()
+                
+                if config.option == "finetune":
+                    loss.backward()
+                    optimizer.step()
 
                 train_loss += loss.item()
                 num_batches += 1
