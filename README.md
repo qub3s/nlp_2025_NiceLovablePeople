@@ -129,7 +129,6 @@ The model finished training in the 6th epoch with a dev accuracy within 2 standa
 **Training results:**
 
 ### Paraphrase Type Generation (PTG) - Generating diverse paraphrase types
-Also tested 10 epochs and a batch size of 128 with no significant improvements.
 
 **Hyperparameters:**
 - epochs: `5`
