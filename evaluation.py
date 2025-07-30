@@ -165,7 +165,7 @@ def model_eval_multitask(
                 etpc_sent_ids.extend(b_sent_ids)
 
         if task == "etpc" or task == "multitask":
-            correct_pred = np.all(np.array(etpc_y_pred) == np.array(etpc_y_true), axis=1).astype(int)
+            correct_pred = np.all(np.array(etpc_y_pred) == np.array(etpc_y_true), axis=0).astype(int)
             etpc_accuracy = np.mean(correct_pred)
             etpc_y_pred = np.array(etpc_y_pred).tolist()  # Convert to list of lists
             
