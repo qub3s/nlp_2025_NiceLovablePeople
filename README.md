@@ -21,6 +21,7 @@ Leonardo Christian da Camara Silva: (gitname) <br/>
   
 
 ## Introduction
+TODO
 This repository is our baseline implementation of the project for the Deep Learning for Natural Language Processing class at the University of Göttingen. TODO add class
 
 TODO: AI card
@@ -43,7 +44,7 @@ task-specific classifiers.
   
 
 ## Requirements
-
+TODO
   
 
 To install requirements and all dependencies using conda, run:
@@ -66,14 +67,15 @@ Additionally, the POS and NER tags need to be downloaded. This can be done by ru
 
 Alternatively, use the provided script `setup.sh`.
 
-The script will create a new conda environment called `dnlp2` and install all required packages.
+The script will create a new conda environment called `dnlp` and install all required packages.
 
 ## Implementation & Contribution
-We followed the instructions, adapted hyperparameters when needed to avoid overfitting.
+We followed the instructions and adapted hyperparameters when needed to avoid overfitting.
 
 Esther Hagenkort: 
 - bert.py (revise, comment)
-- paraphrase generation
+- bonus task: bert etpc paraphrase type detection (debugging)
+- Paraphrase Type Generation (PTG)
 
 Georg Eckardt: 
 - optimizer
@@ -93,6 +95,7 @@ Leonardo Christian da Camara Silva:
 
 ## Results Part 1
 For the baselines we reached the following results with the described hyperparameters and metrics.
+
 ### Stanford Sentiment Treebank (SST) - Sentiment analysis
 **Hyperparameters:**
 - mode: `finetune`
@@ -166,191 +169,26 @@ The model finished training in the 6th epoch with a dev accuracy within 2 standa
 **Training results:**
 
 ### Paraphrase Type Generation (PTG) - Generating diverse paraphrase types
+Also tested 10 epochs and a batch size of 128 with no significant improvements, so the lower values were chosen.
+
 **Hyperparameters:**
+- epochs: `5`
 
-- mode: `finetune`
+- learning rate: `1e-5`
 
-- epochs: `20`
-
-- learning rate: `8e-5`
+- eps = `1e-8`
 
 - optimizer: `AdamW`
 
-- dropout rate: 
+- batch size: `32`
 
-- batch size: `64`
-
-- ... 
-  
-
-## Contributing
-
-  
-
-The project involves the creation of software and documentation to be released under an open source licence.
-
-This license is the Apache License 2.0, which is a permissive licence that allows the use of the software for
-
-commercial purposes. The licence is also compatible with the licences of the libraries used in the project.
-
-  
-
-To contribute to the project, please follow the following steps:
-
-  
-
-Clone the repository to your local machine.
-
-  
-
-````sh
-
-git clone git@gitlab.gwdg.de:deep-learning-nlp/token-tricksters.git
-
-````
-
-  
-
-Add the upstream repository as a remote and disable pushing to it. This allows you to pull from the upstream repository
-
-but not push to it.
-
-  
-
-````sh
-
-git remote add upstream https://github.com/truas/minbert-default-final-project
-
-git remote set-url --push upstream DISABLE
-
-````
-
-  
-
-If you want to pull from the upstream repository you can use the following commands.
-
-  
-
-````sh
-
-git fetch upstream
-
-git merge upstream/main
-
-````
-
-  
-
-### Pre-Commit Hooks
-
-  
-
-The code quality is checked with pre-commit hooks. To install the pre-commit hooks run the following command.
-
-This is used to ensure that the code quality is consistent and that the code is formatted uniformly.
-
-  
-
-````sh
-
-pip install pre-commit
-
-pre-commit install
-
-````
-
-  
-
-This will install the pre-commit hooks in your local repository. The pre-commit hooks will run automatically before each
-
-commit. If the hooks fail the commit will be aborted. You can skip the pre-commit hooks by adding the `--no-verify` flag
-
-to your commit command.
-
-  
-
-The installed pre-commit hooks are:
-
-  
-
-- [`black`](https://github.com/psf/black) - Code formatter (Line length 100)
-
-- [`flake8`](https://github.com/PyCQA/flake8) Code linter (Selected rules)
-
-- [`isort`](https://github.com/PyCQA/isort) - Import sorter
-
-  
 
 ### Grete Cluster
 
+To run the tasks on the Grete cluster we adapted and used the `run_train.sh` script given to us.
   
 
-To run the multitask classifier on the Grete cluster you can use the `run_train.sh` script. You can change the
-
-parameters in the script to your liking. To submit the script use
-
-  
-
-````sh
-
-sbatch run_train.sh
-
-````
-
-  
-
-To check on your job you can use the following command
-
-  
-
-```sh
-
-squeue --me
-
-```
-
-  
-
-The logs of your job will be saved in the `logdir` directory. The best model will be saved in the `models` directory.
-
-  
-
-To run tensorboard on the Grete cluster you can use the following commands to create a tunnel to your local machine and
-
-start tensorboard.
-
-  
-
-````sh
-
-ssh -L localhost:16006:localhost:6006 <username>@glogin.hlrn.de
-
-module load anaconda3
-
-conda activate dnlp2
-
-tensorboard --logdir logdir
-
-````
-
-  
-
-If you want to run the model on the Grete cluster interactively you can use the following command, which will give you
-
-access to a GPU node with an A100 GPU. This is for testing purposes only and should not be used for training.
-
-  
-
-````sh
-
-srun -p grete:shared --pty -G A100:1 --interactive bash
-
-````
-
-  
-
-## AI-Usage Card
-
+## AI-Usage Card todo
   
 
 Artificial Intelligence (AI) aided the development of this project. For transparency, we provide our [AI-Usage Card](./AI-Usage-Card.pdf/) at the top. The card is based on [https://ai-cards.org/](https://ai-cards.org/).
@@ -358,7 +196,6 @@ Artificial Intelligence (AI) aided the development of this project. For transpar
   
 
 ## Acknowledgement TODO
-
   
 
 The project description, partial implementation, and scripts were adapted from the default final project for the
