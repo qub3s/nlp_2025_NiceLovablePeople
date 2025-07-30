@@ -253,12 +253,19 @@ class MultitaskBERT(nn.Module):
         during evaluation, and handled as a logit by the appropriate loss function.
         Dataset: ETPC
         """
+        # Step 1: Concatenate the two sentences while avoiding duplicate special tokens
+        # Ensures proper merging without redundant special tokens
         input_ids = torch.cat([input_ids_1[:, :-1], input_ids_2[:, 1:]], dim=1)
         attention_mask = torch.cat([attention_mask_1[:, :-1], attention_mask_2[:, 1:]], dim=1)
-        
+
+        # Step 2: Pass the concatenated input through the model to get embeddings.
+        # - self.forward_etpc() processes the input and returns contextualized embeddings
+        # - cls_embedding is the embedding of the [CLS] token, used for classification
         cls_embedding = self.forward_etpc(input_ids, attention_mask)
-        
+
         cls_embedding = self.paraphrase_type_dropout(cls_embedding)
+
+        # Step 4: Compute logits for the 26 paraphrase types.
         logits = self.paraphrase_type_classifier(cls_embedding)
 
         return logits
@@ -526,7 +533,7 @@ def train_multitask(args):
 
                 optimizer.zero_grad()
                 logits = model.predict_paraphrase_types(b_ids1, b_mask1, b_ids2, b_mask2)
-                
+
                 loss = F.binary_cross_entropy_with_logits(logits, b_labels)
                 loss.backward()
                 optimizer.step()
