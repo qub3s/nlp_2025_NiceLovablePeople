@@ -389,14 +389,10 @@ def train_multitask(args):
         )
 
         ## Print label distribution for ETPC
-        train_labels = np.vstack([np.array(ex[2], dtype=np.float32) for ex in train_raw])
-        #dev_labels = np.vstack([np.array(ex[2], dtype=np.float32) for ex in dev_raw])
+        # train_labels = np.vstack([np.array(ex[2], dtype=np.float32) for ex in train_raw])
+        # dev_labels = np.vstack([np.array(ex[2], dtype=np.float32) for ex in dev_raw])
         # print("ETPC train label distribution (mean per class):", train_labels.mean(axis=0))
         # print("ETPC dev label distribution (mean per class):", dev_labels.mean(axis=0))
-
-        pos_freq = train_labels.mean(axis=0)
-        neg_freq = 1.0 - pos_freq
-        pos_weight = torch.tensor(neg_freq / (pos_freq + 1e-8), dtype=torch.float32).to(device)
 
 
     ## Initialize model
@@ -419,7 +415,7 @@ def train_multitask(args):
     model = MultitaskBERT(config)
     model = model.to(device)
 
-    etpc_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight) # Loss for the etpc task
+    etpc_loss = nn.BCEWithLogitsLoss() # Loss for the etpc task
 
     if args.task == "etpc":
         # Specific parameters for ETPC
