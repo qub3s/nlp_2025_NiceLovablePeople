@@ -6,7 +6,7 @@
 
 Esther Hagenkort: esthako/GOESTERN-1006113 <br/>
 
-Georg Eckardt: (gitname) <br/>
+Georg Eckardt: qub3s <br/>
 
 Hamza Ahmed Siddiqui: hamzasiddiqui10 <br/>
 
@@ -123,7 +123,6 @@ The model finished training in the 6th epoch with a dev accuracy within 2 standa
 
 - batch size: `64`
 
-- ... 
 
 **Training results:**
 
