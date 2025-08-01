@@ -39,7 +39,6 @@ class BartWithClassifier(nn.Module):
 
         return probabilities
 
-
 def transform_data(dataset, max_length=512):
     """
     dataset: pd.DataFrame
@@ -99,7 +98,6 @@ def transform_data(dataset, max_length=512):
         dl = DataLoader(ds, batch_size = batch_size, shuffle=True)
 
     return dl 
-
 
 def train_model(model, train_data, dev_data, device, epochs=5, lr=lr):
     """
@@ -219,6 +217,9 @@ def test_model(model, test_data, test_ids, device):
         with torch.no_grad():
             # make prediction
             pred = model(X, X_mask)
+
+        # Threshold the data
+        pred = (pred > 0.5).int()
 
         # insert into dataframe
         i = len(df)
