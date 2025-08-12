@@ -34,18 +34,18 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 # Run the script:
 # SST
 echo -e "\nStarting SST\n"
-#python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.25 --epochs=6
+python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.25 --epochs=10
 
 # STS
-echo -e "\nStarting STS\n"
-python -u multitask_classifier.py --use_gpu --option finetune --task sts --hidden_dropout_prob 0.25 --epochs=6
+# echo -e "\nStarting STS\n"
+# python -u multitask_classifier.py --use_gpu --option finetune --task sts --hidden_dropout_prob 0.25 --epochs=10
 
 # QQP
-echo -e "\nStarting QQP\n"
+# echo -e "\nStarting QQP\n"
 #python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=1
 
 # PTD-Bert
-echo -e "\nStarting PTD-Bert\n"
+# echo -e "\nStarting PTD-Bert\n"
 #python -u multitask_classifier.py --use_gpu --option finetune --task etpc --hidden_dropout_prob 0.25 --epochs=20 --lr 1e-6 --batch_size 16
 
 # Paraphrase Type Detection
