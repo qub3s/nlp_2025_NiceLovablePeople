@@ -72,11 +72,10 @@ We noticed that the results changed from run to run even if the hyperparameters 
 
 - batch size: `64`
 
+**Training results:**
 - Accuracies Epoch 6: `train :: 0.896`, `dev :: 0.521`
 - Best dev Accuracy: `train :: 0.704`, `dev :: 0.540` (Achieved in epoch 4)
 The model finished training in the 6th epoch with a dev accuracy within 2 standard deviations of the baseline. The dev accuracy decreased after epoch 4 hinting at overfitting in training. We will tackle the overfitting problem with hyperparameter tuning in phase 2.
-
-**Training results:**
 
 ### Quora Question Pairs (QQP) - Question similarity
 **Hyperparameters:**
