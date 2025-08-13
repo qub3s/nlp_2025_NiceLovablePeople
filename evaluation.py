@@ -28,7 +28,7 @@ from datasets import (
     load_multitask_data,
 )
 
-TQDM_DISABLE = True
+TQDM_DISABLE = False
 
 
 # Perform model evaluation
@@ -41,7 +41,6 @@ def model_eval_multitask(
         quora_y_true = []
         quora_y_pred = []
         quora_sent_ids = []
-
         # Evaluate paraphrase detection.
         if task == "qqp" or task == "multitask":
             for step, batch in enumerate(tqdm(quora_dataloader, desc="eval", disable=TQDM_DISABLE)):
@@ -66,7 +65,6 @@ def model_eval_multitask(
                 quora_y_pred.extend(y_hat)
                 quora_y_true.extend(b_labels)
                 quora_sent_ids.extend(b_sent_ids)
-
         if task == "qqp" or task == "multitask":
             quora_accuracy = np.mean(np.array(quora_y_pred) == np.array(quora_y_true))
         else:
@@ -167,13 +165,25 @@ def model_eval_multitask(
                 etpc_sent_ids.extend(b_sent_ids)
 
         if task == "etpc" or task == "multitask":
-            correct_pred = np.all(np.array(etpc_y_pred) == np.array(etpc_y_true), axis=1).astype(
-                int
-            )
-            etpc_accuracy = np.mean(correct_pred)
-            etpc_y_pred = etpc_y_pred.tolist()
+            
+            # Handle 1D arrays by reshaping to 2D
+            etpc_pred_arr = np.array(etpc_y_pred)
+            etpc_true_arr = np.array(etpc_y_true)
+            
+            if etpc_pred_arr.size > 0:
+                if etpc_pred_arr.ndim == 1:
+                    etpc_pred_arr = etpc_pred_arr.reshape(1, -1)
+                    etpc_true_arr = etpc_true_arr.reshape(1, -1)
+                
+                correct_pred = np.all(etpc_pred_arr == etpc_true_arr, axis=1).astype(int)
+                etpc_accuracy = np.mean(correct_pred)
+            else:
+                etpc_accuracy = 0.0
+            
+            etpc_y_pred = etpc_pred_arr.tolist()
         else:
             etpc_accuracy = None
+
 
         if task == "qqp" or task == "multitask":
             print(f"Paraphrase detection accuracy: {quora_accuracy:.3f}")
@@ -456,6 +466,7 @@ def test_model_multitask(args, model, device):
                 f.write(f"{p}\t{s}\n")
 
     if task == "etpc" or task == "multitask":
+        print("TEST")
         with open(args.etpc_dev_out, "w+") as f:
             print(f"dev etpc acc :: {dev_etpc_accuracy :.3f}")
             f.write("id,Predicted_Paraphrase_Types\n")

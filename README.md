@@ -1,27 +1,182 @@
-# DNLP SS25 Final Project
+# DNLP SS25 Final Project 
 
-This is the starting code for the default final project for the Deep Learning for Natural Language Processing course at the University of Göttingen. You can find the handout [here](https://docs.google.com/document/d/1pZiPDbcUVhU9ODeMUI_lXZKQWSsxr7GO/edit?usp=sharing&ouid=112211987267179322743&rtpof=true&sd=true)
+<div align="left">
 
-In this project, you will implement some important components of the BERT model to better understanding its architecture.
-You will then use the embeddings produced by your BERT model on three downstream tasks: sentiment classification, paraphrase detection and semantic similarity.
+<b> NiceLoveablePeople </b> <br/>
 
-After finishing the BERT implementation, you will have a simple model that simultaneously performs the three tasks.
-You will then implement extensions to improve on top of this baseline.
+Esther Hagenkort: esthako/GOESTERN-1006113 <br/>
 
-## Setup instructions
+Georg Eckardt: qub3s <br/>
 
-* Follow `setup.sh` to properly setup a conda environment and install dependencies.
-* There is a detailed description of the code structure in [STRUCTURE.md](./STRUCTURE.md), including a description of which parts you will need to implement.
-* You are only allowed to use libraries that are installed by `setup.sh` (Use `setup_gwdg.sh` if you are using the GWDG clusters).
-* Libraries that give you other pre-trained models or embeddings are not allowed (e.g., `transformers`).
-* Use this template to create your README file of your repository: <https://github.com/gipplab/dnlp_readme_template>
+Hamza Ahmed Siddiqui: hamzasiddiqui10 <br/>
 
-## Project Description
+Amon Pönitzsch: 4m0n <br/>
 
-Please refer to the project description for a through explanation of the project and its parts.
+Leonardo Christian da Camara Silva: Dacasil <br/>
 
-### Acknowledgement
+</div>
 
+  
+## Introduction
+This repository is our baseline implementation of the project for the model M.Inf.2202: Deep Learning for Natural Language Processing at the University of Göttingen by the GippLab.
+
+Aditionally to completing the bert implementation and the optimizer, the following tasks have been completed:
+- Stanford Sentiment Treebank (SST) - Sentiment analysis
+- Quora Question Pairs (QQP) - Question similarity
+- Semantic Textual Similarity (STS) - Measuring text meaning similarity
+- Paraphrase Type Detection (PTD) - Identifying paraphrase types and relationships
+- Paraphrase Type Generation (PTG) - Generating diverse paraphrase types
+- bonus: Paraphrase Type Detection with Bert (PTD-Bert) - Identifying paraphrase types and relationships
+
+## Implementation & Contribution
+We followed the instructions and adapted hyperparameters when needed to avoid overfitting.
+
+Esther Hagenkort: 
+- bert.py (revise, comment)
+- bonus: paraphrase type detection with bert (PTD-bert) (debugging)
+- Paraphrase Type Generation (PTG)
+
+Georg Eckardt: 
+- optimizer
+- bert.py
+- paraphrase type detection
+
+Hamza Ahmed Siddiqui:
+- bert.py (revise, comment)
+- Stanford Sentiment Treebank (SST) - Sentiment analysis
+
+Amon Pönitzsch:
+- paraphrase detection (QQP)
+
+Leonardo Christian da Camara Silva:
+- Semantic Textual Similarity (STS)
+- bonus: paraphrase type detection with bert (PTD-bert)
+  
+
+
+## Results Part 1
+For the baselines we reached the following results with the described hyperparameters and metrics.
+We noticed that the results changed from run to run even if the hyperparameters were not changed. We therefore assume that something with the seed is not working.
+
+### Stanford Sentiment Treebank (SST) - Sentiment analysis
+**Hyperparameters:**
+- mode: `finetune`
+
+- epochs: `6`
+
+- learning rate: `1e-05`
+
+- optimizer: `AdamW`
+
+- dropout rate: `0.25`
+
+- batch size: `64`
+
+- Accuracies Epoch 6: `train :: 0.896`, `dev :: 0.521`
+- Best dev Accuracy: `train :: 0.704`, `dev :: 0.540` (Achieved in epoch 4)
+The model finished training in the 6th epoch with a dev accuracy within 2 standard deviations of the baseline. The dev accuracy decreased after epoch 4 hinting at overfitting in training. We will tackle the overfitting problem with hyperparameter tuning in phase 2.
+
+**Training results:**
+
+### Quora Question Pairs (QQP) - Question similarity
+**Hyperparameters:**
+- mode: `finetune`
+
+- epochs: `1`
+
+- learning rate: `8e-5`
+
+- optimizer: `AdamW`
+
+- dropout rate: `0.1`
+
+- batch size: `64`
+
+
+**Training results:**
+- Dev Accuracy Finetuning: `0.870`
+
+### Semantic Textual Similarity (STS) - Measuring text meaning similarity
+**Hyperparameters:**
+- mode: `finetune`
+
+- epochs: `10`
+
+- learning rate: `1e-5`
+
+- optimizer: `AdamW`
+
+- dropout rate: `0.25`
+
+- batch size: `64`
+
+**Training results:**
+- Dev Correlation STS Finetuning: `0.371`
+
+### Paraphrase Type Detection (PTD) - Identifying paraphrase types and relationships
+**Hyperparameters:**
+- epochs: `10`
+
+- learning rate: `1e-5`
+
+- optimizer: `AdamW`
+
+- dropout rate: `0.1`
+
+- batch size: `64`
+
+
+**Training results:**
+- Paraphrase Detection: Dev Accuracy: `0.906`
+### Paraphrase Type Generation (PTG) - Generating diverse paraphrase types
+
+**Hyperparameters:**
+- epochs: `5`
+
+- learning rate: `1e-5`
+
+- eps = `1e-8`
+
+- optimizer: `AdamW`
+
+- batch size: `32`
+**Training results:**
+- Paraphrase Generation: BLEU Score: `49.18`
+  
+### Bonus: Paraphrase Type Detection with Bert (PTD-bert) - Identifying paraphrase types and relationships
+
+**Hyperparameters:**
+- epochs: `10`
+
+- learning rate: `1e-6`
+
+- eps = `1e-8`
+
+- optimizer: `AdamW`
+
+- batch size: `16`
+  
+**Training results:**
+  - Dev Accuracy `0.13`
+  - Dev Macro f1 `0.264`
+  - Dev Micro f1 `0.709`
+
+**Evaluation structure:**
+The ETPC train label distribution (mean label value per class): 
+[0.138, 0.049, 0.048, 0.127, 0.179, 0.647, 0.109, 0.049, 0.001, 0.005, 0.198, 0.013, 0.041, 0.006, 0.017, 0.011, 0.112, 0.192, 0.018, 0.075, 0.764, 0.207, 0.092, 0.993, 0.164, 0.023]
+
+It indicates that most classes are very rare (mean values close to 0.01-0.05) and a few classes are very common (e.g. class 23 with 0.993). So it follows that we have severe class imbalance, so its hard to learn rare classes and therefore the standard accuracy (fraction of correct labels) might be missleading. Thats why I decided to also display the macro and micro F1.
+
+**Improvements:**
+For the second part I will do hyperparameter finetuning to counter overfitting and find the best local minima. Also I will try to impliment the "Siamese + interaction" recipe used by DeBErta on ETPC from the GippLab group (Paraphrase Types for Generation and Detection, Wahle et al.) and other improvements from Chapter 7.
+
+### Grete Cluster
+To run the tasks on the Grete cluster we adapted and used the `run_train.sh` script given to us.
+
+## AI-Usage 
+AI (debugging) support such as ChatGPT were used, a detailed AI-Usage card will be provided in the final report.
+
+## Acknowledgement
 The project description, partial implementation, and scripts were adapted from the default final project for the Stanford [CS 224N class](https://web.stanford.edu/class/cs224n/) developed by Gabriel Poesia, John, Hewitt, Amelie Byun, John Cho, and their (large) team (Thank you!)
 
 The BERT implementation part of the project was adapted from the "minbert" assignment developed at Carnegie Mellon University's [CS11-711 Advanced NLP](http://phontron.com/class/anlp2021/index.html),

@@ -39,8 +39,7 @@ class BartWithClassifier(nn.Module):
 
         return probabilities
 
-
-def transform_data(dataset, max_length=512):
+def transform_data(dataset, max_length=512, shuffle=True):
     """
     dataset: pd.DataFrame
 
@@ -92,14 +91,13 @@ def transform_data(dataset, max_length=512):
         
         # create the Dataset and the Dataloader
         ds = TensorDataset(token["input_ids"], token["attention_mask"], one_hot)
-        dl = DataLoader(ds, batch_size = batch_size, shuffle=True)
+        dl = DataLoader(ds, batch_size = batch_size, shuffle=shuffle)
     else:
         # create the Dataset and the Dataloader
         ds = TensorDataset(token["input_ids"], token["attention_mask"])
-        dl = DataLoader(ds, batch_size = batch_size, shuffle=True)
+        dl = DataLoader(ds, batch_size = batch_size, shuffle=shuffle)
 
     return dl 
-
 
 def train_model(model, train_data, dev_data, device, epochs=5, lr=lr):
     """
@@ -210,7 +208,9 @@ def test_model(model, test_data, test_ids, device):
     # load the data
     df = pd.DataFrame(columns=['id', 'Predicted_Paraphrase_Types'])
     
-    for data, ids in zip(test_data, test_ids):
+    c = 0
+
+    for data in test_data:
         X, X_mask = data 
         X = X.to(device)
         X_mask = X_mask.to(device)
@@ -220,10 +220,15 @@ def test_model(model, test_data, test_ids, device):
             # make prediction
             pred = model(X, X_mask)
 
+        # Threshhold the data
+        pred = (pred > 0.5).int()
+
         # insert into dataframe
-        i = len(df)
-        df.loc[i, 'id'] = ids
-        df.loc[i, 'Predicted_Paraphrase_Types'] = pred 
+        for x in pred:
+            i = len(df)
+            df.loc[i, 'id'] = test_ids[c]
+            df.loc[i, 'Predicted_Paraphrase_Types'] = x.tolist()
+            c += 1
 
     return df
 
@@ -306,8 +311,8 @@ def finetune_paraphrase_detection(args):
     train_ds, val_ds = sklearn.model_selection.train_test_split(train_dataset, test_size=0.20)
     
     train_data = transform_data(train_ds)
-    dev_data = transform_data(val_ds)
-    test_data = transform_data(test_dataset)
+    dev_data = transform_data(val_ds, shuffle = False)
+    test_data = transform_data(test_dataset, shuffle = False)
 
     print(f"Loaded {len(train_dataset)} training samples.")
 
@@ -317,6 +322,7 @@ def finetune_paraphrase_detection(args):
 
     
     accuracy, matthews_corr = evaluate_model(model, dev_data, device)
+
     print(f"The accuracy of the model is: {accuracy:.3f}")
     print(f"Matthews Correlation Coefficient of the model is: {matthews_corr:.3f}")
 
