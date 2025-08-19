@@ -151,6 +151,64 @@ class MultitaskBERT(nn.Module):
         Dataset: Quora
         """
 
+        device = input_ids_1.device
+        sep_token_id = 102  # [SEP] token
+        cls_token_id = 101  # [CLS] token
+
+        # Process each sentence pair
+        combined_input_ids = []
+        combined_attention_masks = []
+
+        for i in range(input_ids_1.size(0)):
+            # Process first sentence (remove trailing [SEP] if exists)
+            seq1 = input_ids_1[i]
+            if seq1[-1] == sep_token_id:
+                seq1 = seq1[:-1]
+                mask1 = attention_mask_1[i][:-1]
+            else:
+                mask1 = attention_mask_1[i]
+
+            # Process second sentence (remove [CLS] and trailing [SEP])
+            seq2 = input_ids_2[i]
+            if seq2[0] == cls_token_id:
+                seq2 = seq2[1:]
+                mask2 = attention_mask_2[i][1:]
+            if seq2[-1] == sep_token_id:
+                seq2 = seq2[:-1]
+                mask2 = mask2[:-1]
+
+            # Combine with [SEP] tokens
+            new_input = torch.cat([
+                seq1,
+                torch.tensor([sep_token_id], device=device),
+                seq2,
+                torch.tensor([sep_token_id], device=device)
+            ])
+
+            new_mask = torch.cat([
+                mask1,
+                torch.tensor([1], device=device),
+                mask2,
+                torch.tensor([1], device=device)
+            ])
+
+            combined_input_ids.append(new_input)
+            combined_attention_masks.append(new_mask)
+            
+        # Pad sequences
+        input_ids = torch.nn.utils.rnn.pad_sequence(
+            combined_input_ids, batch_first=True, padding_value=0)
+        attention_mask = torch.nn.utils.rnn.pad_sequence(
+            combined_attention_masks, batch_first=True, padding_value=0)
+
+        # Get embeddings using forward()
+        cls_embedding = self.forward(input_ids, attention_mask)
+        
+        # Compute logits
+        logits = self.paraphrase_classifier(cls_embedding)
+        return logits.squeeze(-1)
+
+
         input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
         attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
         mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
