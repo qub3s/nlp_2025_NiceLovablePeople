@@ -96,7 +96,7 @@ class MultitaskBERT(nn.Module):
         attention_mask: attention mask for the input
         Returns: pooled sentence embedding of size [batch_size, hidden_size]
         """
-        token_embeddings = model_output.last_hidden_state
+        token_embeddings = model_output["last_hidden_state"]
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
         sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
         sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
@@ -492,6 +492,8 @@ def train_multitask(args):
 
                 train_loss += loss.item()
                 num_batches += 1
+                if num_batches > 10 and args.fastEpoch:
+                    break
         
         ## BONUS TASK
         # etpc training
@@ -533,6 +535,7 @@ def train_multitask(args):
                 model=model,
                 device=device,
                 task=args.task,
+                fast=args.fastEpoch,
             )
         )
 
@@ -545,6 +548,7 @@ def train_multitask(args):
                 model=model,
                 device=device,
                 task=args.task,
+                fast=args.fastEpoch,
             )
         )
 
@@ -721,7 +725,7 @@ def get_args():
             else "predictions/bert/multitask/etpc-paraphrase-detection-test-output.csv"
         ),
     )
-
+    parser.add_argument("--fastEpoch", type=bool, default=False)
     # Hyperparameters
     parser.add_argument(
         "--batch_size", help="sst: 64 can fit a 12GB GPU", type=int, default=64

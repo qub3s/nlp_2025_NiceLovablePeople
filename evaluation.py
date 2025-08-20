@@ -33,7 +33,7 @@ TQDM_DISABLE = False
 
 # Perform model evaluation
 def model_eval_multitask(
-    sst_dataloader, quora_dataloader, sts_dataloader, etpc_dataloader, model, device, task
+    sst_dataloader, quora_dataloader, sts_dataloader, etpc_dataloader, model, device, task, fast
 ):
     model.eval()  # switch to eval model, will turn off randomness like dropout
 
@@ -65,6 +65,10 @@ def model_eval_multitask(
                 quora_y_pred.extend(y_hat)
                 quora_y_true.extend(b_labels)
                 quora_sent_ids.extend(b_sent_ids)
+                
+                if step > 10 and fast:
+                    break
+                
         if task == "qqp" or task == "multitask":
             quora_accuracy = np.mean(np.array(quora_y_pred) == np.array(quora_y_true))
         else:
@@ -214,7 +218,7 @@ def model_eval_multitask(
 
 # Perform model evaluation in terms by averaging accuracies across tasks.
 def model_eval_test_multitask(
-    sst_dataloader, quora_dataloader, sts_dataloader, etpc_dataloader, model, device, task
+    sst_dataloader, quora_dataloader, sts_dataloader, etpc_dataloader, model, device, task, fast
 ):
     model.eval()  # switch to eval model, will turn off randomness like dropout
 
@@ -242,7 +246,8 @@ def model_eval_test_multitask(
 
                 quora_y_pred.extend(y_hat)
                 quora_sent_ids.extend(b_sent_ids)
-
+                if step > 10 and fast:
+                    break
         sts_y_pred = []
         sts_sent_ids = []
 
@@ -386,6 +391,7 @@ def test_model_multitask(args, model, device):
     )
 
     task = args.task
+    fast = args.fastEpoch
 
     (
         dev_quora_accuracy,
@@ -408,6 +414,7 @@ def test_model_multitask(args, model, device):
         model,
         device,
         task,
+        fast,
     )
 
     (
@@ -427,6 +434,7 @@ def test_model_multitask(args, model, device):
         model,
         device,
         task,
+        fast,
     )
 
     if task == "sst" or task == "multitask":
