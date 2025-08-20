@@ -79,15 +79,28 @@ class MultitaskBERT(nn.Module):
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
 
         # QQP
-        self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
-        self.paraphrase_classifier = nn.Dropout(config.hidden_dropout_prob)
+        self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
+        # Klassischer SBERT-Klassifikationskopf für binäre Aufgaben:
+        # Eingabe: [u, v, |u-v|] -> Größe: 768 * 3 = 2304
+        self.paraphrase_classifier = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
         
            
-
+    def mean_pooling(self, model_output, attention_mask):
+        """
+        Performs mean pooling on the token embeddings, taking into account the attention mask.
+        model_output: last_hidden_state from BERT
+        attention_mask: attention mask for the input
+        Returns: pooled sentence embedding of size [batch_size, hidden_size]
+        """
+        token_embeddings = model_output.last_hidden_state
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        return sum_embeddings / sum_mask
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
 
@@ -97,6 +110,9 @@ class MultitaskBERT(nn.Module):
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        if args.task == "qqp":
+            return self.mean_pooling(outputs, attention_mask)
+        
         return outputs["pooler_output"] 
     
     def forward_etpc(self, input_ids, attention_mask):
@@ -150,70 +166,27 @@ class MultitaskBERT(nn.Module):
         during evaluation, and handled as a logit by the appropriate loss function.
         Dataset: Quora
         """
-
-        device = input_ids_1.device
-        sep_token_id = 102  # [SEP] token
-        cls_token_id = 101  # [CLS] token
-
-        # Process each sentence pair
-        combined_input_ids = []
-        combined_attention_masks = []
-
-        for i in range(input_ids_1.size(0)):
-            # Process first sentence (remove trailing [SEP] if exists)
-            seq1 = input_ids_1[i]
-            if seq1[-1] == sep_token_id:
-                seq1 = seq1[:-1]
-                mask1 = attention_mask_1[i][:-1]
-            else:
-                mask1 = attention_mask_1[i]
-
-            # Process second sentence (remove [CLS] and trailing [SEP])
-            seq2 = input_ids_2[i]
-            if seq2[0] == cls_token_id:
-                seq2 = seq2[1:]
-                mask2 = attention_mask_2[i][1:]
-            if seq2[-1] == sep_token_id:
-                seq2 = seq2[:-1]
-                mask2 = mask2[:-1]
-
-            # Combine with [SEP] tokens
-            new_input = torch.cat([
-                seq1,
-                torch.tensor([sep_token_id], device=device),
-                seq2,
-                torch.tensor([sep_token_id], device=device)
-            ])
-
-            new_mask = torch.cat([
-                mask1,
-                torch.tensor([1], device=device),
-                mask2,
-                torch.tensor([1], device=device)
-            ])
-
-            combined_input_ids.append(new_input)
-            combined_attention_masks.append(new_mask)
-            
-        # Pad sequences
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            combined_input_ids, batch_first=True, padding_value=0)
-        attention_mask = torch.nn.utils.rnn.pad_sequence(
-            combined_attention_masks, batch_first=True, padding_value=0)
-
-        # Get embeddings using forward()
-        cls_embedding = self.forward(input_ids, attention_mask)
         
-        # Compute logits
-        logits = self.paraphrase_classifier(cls_embedding)
+        """
+        SBERT Implementation for paraphrase detection.
+        Processes each sentence separately and combines their embeddings for classification.
+        """
+        # Get embeddings for both sentences separately using the same BERT encoder (Siamese)
+        # Shape for each: [batch_size, hidden_size]
+        u = self.forward(input_ids_1, attention_mask_1)  # Embedding for sentence 1
+        v = self.forward(input_ids_2, attention_mask_2)  # Embedding for sentence 2
+        
+        # Apply dropout to each embedding
+        u = self.paraphrase_dropout(u)
+        v = self.paraphrase_dropout(v)
+        
+        # SBERT feature combination: concatenate (u, v, |u - v|)
+        # This allows the classifier to learn relationships between the embeddings
+        combined_features = torch.cat([u, v, torch.abs(u - v)], dim=-1)
+        
+        # Compute logits from the combined features
+        logits = self.paraphrase_classifier(combined_features)
         return logits.squeeze(-1)
-
-
-        input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
-        attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
-        mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
-        return self.paraphrase_classifier(mean_embedding).squeeze(-1)
-    
 
     def predict_paraphrase_types(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
