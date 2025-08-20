@@ -42,7 +42,7 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # QQP
 echo -e "\nStarting QQP\n"
-python multitask_classifier.py --use_gpu --option pretrain --task qqp --hidden_dropout_prob 0.1 --epochs=1
+python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=2 --lr 1e-3
 
 # PTD-Bert
 #echo -e "\nStarting PTD-Bert\n"

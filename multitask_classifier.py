@@ -83,10 +83,15 @@ class MultitaskBERT(nn.Module):
         # Klassischer SBERT-Klassifikationskopf für binäre Aufgaben:
         # Eingabe: [u, v, |u-v|] -> Größe: 768 * 3 = 2304
         self.paraphrase_classifier = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
+        nn.init.xavier_uniform_(self.paraphrase_classifier.weight, gain=nn.init.calculate_gain('relu'))
+        nn.init.constant_(self.paraphrase_classifier.bias, 0.0)
+
+
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
+
         
            
     def mean_pooling(self, model_output, attention_mask):
@@ -168,24 +173,24 @@ class MultitaskBERT(nn.Module):
         """
         
         """
+        
         SBERT Implementation for paraphrase detection.
         Processes each sentence separately and combines their embeddings for classification.
         """
-        # Get embeddings for both sentences separately using the same BERT encoder (Siamese)
-        # Shape for each: [batch_size, hidden_size]
-        u = self.forward(input_ids_1, attention_mask_1)  # Embedding for sentence 1
-        v = self.forward(input_ids_2, attention_mask_2)  # Embedding for sentence 2
-        
-        # Apply dropout to each embedding
+        u = self.forward(input_ids_1, attention_mask_1)
+        v = self.forward(input_ids_2, attention_mask_2)
+
         u = self.paraphrase_dropout(u)
         v = self.paraphrase_dropout(v)
-        
-        # SBERT feature combination: concatenate (u, v, |u - v|)
-        # This allows the classifier to learn relationships between the embeddings
-        combined_features = torch.cat([u, v, torch.abs(u - v)], dim=-1)
-        
-        # Compute logits from the combined features
+
+        abs_diff = torch.abs(u - v)
+
+        # Concatenate features
+        combined_features = torch.cat([u, v, abs_diff], dim=-1)
+
+        # Compute logits
         logits = self.paraphrase_classifier(combined_features)
+        
         return logits.squeeze(-1)
 
     def predict_paraphrase_types(
@@ -398,6 +403,23 @@ def train_multitask(args):
             weight_decay=0.01,
             correct_bias=False,
         )
+    elif args.task == "qqp":
+        bert_parameters = []
+        classifier_parameters = []
+
+        for name, param in model.named_parameters():
+            if "bert" in name: 
+                bert_parameters.append(param)
+            else: 
+                classifier_parameters.append(param)
+
+
+        optimizer_grouped_parameters = [
+            {"params": bert_parameters, "lr": 2e-5},   
+            {"params": classifier_parameters, "lr": args.lr}, 
+        ]
+
+        optimizer = AdamW(optimizer_grouped_parameters)
     else:
         # Default optimizer
         lr = args.lr
