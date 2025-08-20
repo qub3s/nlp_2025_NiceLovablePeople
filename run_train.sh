@@ -38,7 +38,11 @@ echo -e "\nStarting SST\n"
 
 # STS
 echo -e "\nStarting STS\n"
-#python -u multitask_classifier.py --use_gpu --option finetune --task sts --hidden_dropout_prob 0.25 --epochs=10
+python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type simple --forward_type pooler --hidden_dropout_prob 0.25 --epochs=10
+python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type complex --forward_type pooler --hidden_dropout_prob 0.25 --epochs=10
+python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type simple --forward_type raw_cls --hidden_dropout_prob 0.25 --epochs=10
+python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type complex --forward_type raw_cls --hidden_dropout_prob 0.25 --epochs=10
+
 
 # QQP
 echo -e "\nStarting QQP\n"
@@ -50,7 +54,7 @@ echo -e "\nStarting PTD-Bert\n"
 
 # Paraphrase Type Detection
 echo -e "\nStarting PTD\n"
-python bart_detection.py --use_gpu
+#python bart_detection.py --use_gpu
 
 # Paraphrase Generation
 echo -e "\nStarting PG\n"

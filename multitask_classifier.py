@@ -59,6 +59,9 @@ class MultitaskBERT(nn.Module):
             "bert-base-uncased", local_files_only=config.local_files_only
         )
 
+        # Store config as instance variable
+        self.config = config
+
         # Freeze BERT parameters in pretrain mode
         for param in self.bert.parameters():
             if config.option == "pretrain":
@@ -76,8 +79,13 @@ class MultitaskBERT(nn.Module):
 
         # STS Regression Head
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
-
+        
+        if config.regressor_type == "simple":
+            # Simple regressor: just a linear layer
+            self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
+        elif config.regressor_type == "complex":
+            self.sts_regressor = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE * 3, 512), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob), nn.Linear(512, 256), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob),nn.Linear(256, 1))
+        
         # QQP
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
         self.paraphrase_classifier = nn.Dropout(config.hidden_dropout_prob)
@@ -86,26 +94,22 @@ class MultitaskBERT(nn.Module):
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
         
-           
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
 
-        # The final BERT embedding is the hidden state of [CLS] token (the first token).
-        # See BertModel.forward() for more details.
-        # Here, you can start by just returning the embeddings straight from BERT.
-        # When thinking of improvements, you can later try modifying this
-        # (e.g., by adding other layers).
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        return outputs["pooler_output"] 
-    
-    def forward_etpc(self, input_ids, attention_mask):
-        """Use last hidden state for the etpc datase."""
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        last_hidden_state = outputs["last_hidden_state"]
-        cls_embedding = last_hidden_state[:, 0]
-        return cls_embedding
-    
+        if self.config.forward_type == "pooler":
+            return outputs["pooler_output"] 
+        
+        elif self.config.forward_type == "raw_cls":
+            if isinstance(outputs, dict):
+                return outputs["last_hidden_state"][:, 0, :]
+            else:
+                return outputs.last_hidden_state[:, 0, :]
+            
+
+
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
         Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
@@ -172,7 +176,7 @@ class MultitaskBERT(nn.Module):
         attention_mask = torch.cat([attention_mask_1[:, :-1], attention_mask_2[:, 1:]], dim=1)
 
         # Pass the concatenated input through the model to get embeddings
-        cls_embedding = self.forward_etpc(input_ids, attention_mask)
+        cls_embedding = self.forward(input_ids, attention_mask)
         cls_embedding = self.paraphrase_type_dropout(cls_embedding)
         logits = self.paraphrase_type_classifier(cls_embedding)
         
@@ -329,13 +333,6 @@ def train_multitask(args):
             collate_fn=etpc_dev_dataset.collate_fn,
         )
 
-        ## Print label distribution for ETPC
-        # train_labels = np.vstack([np.array(ex[2], dtype=np.float32) for ex in train_raw])
-        # dev_labels = np.vstack([np.array(ex[2], dtype=np.float32) for ex in dev_raw])
-        # print("ETPC train label distribution (mean per class):", train_labels.mean(axis=0))
-        # print("ETPC dev label distribution (mean per class):", dev_labels.mean(axis=0))
-
-
     ## Initialize model
     config = {
         "hidden_dropout_prob": args.hidden_dropout_prob,
@@ -343,6 +340,8 @@ def train_multitask(args):
         "data_dir": ".",
         "option": args.option,
         "local_files_only": args.local_files_only,
+        "regressor_type": args.regressor_type, #NEW
+        "forward_type": args.forward_type,
     }
     config = SimpleNamespace(**config)
 
@@ -574,9 +573,27 @@ def get_args():
     )
     parser.add_argument("--use_gpu", action="store_true")
 
+    # NEW: Regressor type agument
+    parser.add_argument(
+        "--regressor_type",
+        type=str,
+        help="Type of regressor to use: simple or complex",
+        choices=("simple", "complex"),
+        default="simple",
+    )
+
+    # NEW: Add forward function type argument
+    parser.add_argument(
+        "--forward_type",
+        type=str,
+        help="Type of forward function: pooler or raw_cls",
+        choices=("pooler", "raw_cls"),
+        default="pooler",
+    )
+
     args, _ = parser.parse_known_args()
     print(f"args: {args}")
-    # Dataset paths
+    # Dataset pathsHepatitis
     parser.add_argument("--sst_train", type=str, default="data/sst-sentiment-train.csv")
     parser.add_argument("--sst_dev", type=str, default="data/sst-sentiment-dev.csv")
     parser.add_argument(
