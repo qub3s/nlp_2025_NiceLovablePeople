@@ -176,5 +176,3 @@ test_run_hamza.py
 notes.txt
 bert_georg.py
 .DS_Store
-data/snli_1.0_train.jsonl
-data/snli_1.0_train.jsonl
