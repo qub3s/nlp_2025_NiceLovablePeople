@@ -25,6 +25,7 @@ from optimizer import AdamW
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
+import datetime
 
 TQDM_DISABLE = False
 
@@ -197,7 +198,33 @@ def save_model(model, optimizer, args, config, filepath):
     torch.save(save_info, filepath)
     print(f"Saving the model to {filepath}.")
 
-## BONUS TASK
+
+####################### STS Fine-Tuning improvement ##########################
+
+def simcse_contrastive_loss(self, emb1, emb2, temperature=0.05):
+    """
+    Correct SimCSE contrastive loss matching the paper exactly
+    """
+    batch_size = emb1.size(0)
+    
+    # Normalize embeddings
+    emb1 = F.normalize(emb1, dim=1)
+    emb2 = F.normalize(emb2, dim=1)
+    
+    # Cosine similarity matrix: N x N
+    sim_matrix = torch.matmul(emb1, emb2.T) / temperature
+    
+    # Create labels: diagonal elements are positives
+    labels = torch.arange(batch_size).to(emb1.device)
+    
+    # The paper's loss: -log(exp(sim_pos) / sum(exp(sim_neg)))
+    # This is equivalent to cross_entropy with sim_matrix as logits
+    loss = F.cross_entropy(sim_matrix, labels)
+    
+    return loss
+
+################################ BONUS TASK #####################################
+
 def evaluate_etpc_f1(model, dataloader, device):
     """
     Evaluates the model on the ETPC dataset and computes F1 scores
@@ -374,12 +401,21 @@ def train_multitask(args):
 
     best_dev_acc = float("-inf")
 
+    # Save train/dev losses and correlations
+    train_correlations = []
+    dev_correlations = []
+    train_losses = []
+    dev_losses = []
+
     ## Training loop
     for epoch in range(args.epochs):
 
         model.train()
         train_loss = 0
+        dev_loss = 0
         num_batches = 0
+        dev_num_batches = 0
+        
 
         # SST training
         if args.task == "sst" or args.task == "multitask":
@@ -430,6 +466,9 @@ def train_multitask(args):
 
                 train_loss += loss.item()
                 num_batches += 1
+
+                if num_batches == 2:
+                    break
 
         # QQP training
         if args.task == "qqp" or args.task == "multitask":
@@ -492,6 +531,26 @@ def train_multitask(args):
 
         train_loss = train_loss / num_batches
 
+        if args.task == "sts" or args.task == "multitask":
+            for batch in sts_dev_dataloader:
+                b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                    batch["token_ids_1"].to(device),
+                    batch["attention_mask_1"].to(device),
+                    batch["token_ids_2"].to(device),
+                    batch["attention_mask_2"].to(device),
+                    batch["labels"].to(device).float(),
+                )
+                
+                predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                loss = F.mse_loss(predictions, b_labels.view(-1))
+                dev_loss += loss.item()
+                dev_num_batches += 1
+
+                if dev_num_batches == 2:
+                    break
+        
+        dev_loss = dev_loss / dev_num_batches
+
         quora_train_acc, _, _, sst_train_acc, _, _, sts_train_corr, _, _, etpc_train_acc, _, _ = (
             model_eval_multitask(
                 sst_train_dataloader,
@@ -529,6 +588,12 @@ def train_multitask(args):
             "multitask": (0, 0),  # TODO
         }[args.task]
 
+        # Store metrics
+        train_correlations.append(sts_train_corr)
+        dev_correlations.append(sts_dev_corr)
+        train_losses.append(train_loss)
+        dev_losses.append(dev_loss)
+
         print(
             f"Epoch {epoch+1:02} ({args.task}): train loss :: {train_loss:.3f}, train :: {train_acc:.3f}, dev :: {dev_acc:.3f}"
         )
@@ -536,7 +601,25 @@ def train_multitask(args):
         if dev_acc > best_dev_acc:
             best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
+    
+    # Create metrics directory if it doesn't exist
+    os.makedirs("metrics", exist_ok=True)
 
+    # Save metrics with timestamp
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    metrics_filename = f"metrics/sts_metrics_{args.task}_{timestamp}.npz"
+
+    metrics = {
+        'train_correlations': np.array(train_correlations),
+        'dev_correlations': np.array(dev_correlations),
+        'train_losses': np.array(train_losses),
+        'dev_losses': np.array(dev_losses)
+    }
+
+    np.savez(metrics_filename, **metrics)
+    print(f"Saved metrics to {metrics_filename}")
+    
+    
 def test_model(args):
     with torch.no_grad():
         device = torch.device("cuda") if args.use_gpu else torch.device("cpu")

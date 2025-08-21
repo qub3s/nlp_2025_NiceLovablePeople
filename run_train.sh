@@ -33,16 +33,17 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
 # SST
-echo -e "\nStarting SST\n"
+#echo -e "\nStarting SST\n"
 #python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.25 --epochs=6
 
 # STS
 echo -e "\nStarting STS\n"
-python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type simple --forward_type pooler --hidden_dropout_prob 0.25 --epochs=10
-python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type complex --forward_type pooler --hidden_dropout_prob 0.25 --epochs=10
-python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type simple --forward_type raw_cls --hidden_dropout_prob 0.25 --epochs=10
-python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type complex --forward_type raw_cls --hidden_dropout_prob 0.25 --epochs=10
+#python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type simple --forward_type pooler --hidden_dropout_prob 0.25 --epochs=10
+#python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type complex --forward_type pooler --hidden_dropout_prob 0.25 --epochs=10
+#python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type simple --forward_type raw_cls --hidden_dropout_prob 0.25 --epochs=10
+#python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type complex --forward_type raw_cls --hidden_dropout_prob 0.25 --epochs=10
 
+python -u train_simcse_nli.py --epochs 6 --batch_size 64 --lr 2e-5
 
 # QQP
 echo -e "\nStarting QQP\n"
