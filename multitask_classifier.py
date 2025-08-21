@@ -27,6 +27,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 import datetime
 
+from torch.optim.lr_scheduler import LambdaLR
+
 TQDM_DISABLE = False
 
 
@@ -60,7 +62,6 @@ class MultitaskBERT(nn.Module):
             "bert-base-uncased", local_files_only=config.local_files_only
         )
 
-        # Store config as instance variable
         self.config = config
 
         # Freeze BERT parameters in pretrain mode
@@ -79,13 +80,17 @@ class MultitaskBERT(nn.Module):
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
         # STS Regression Head
-        self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
-        
         if config.regressor_type == "simple":
-            # Simple regressor: just a linear layer
+            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
             self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
+
         elif config.regressor_type == "complex":
+            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
             self.sts_regressor = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE * 3, 512), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob), nn.Linear(512, 256), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob),nn.Linear(256, 1))
+
+        elif config.regressor_type == "sbert":
+            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
+
         
         # QQP
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
@@ -108,9 +113,15 @@ class MultitaskBERT(nn.Module):
                 return outputs["last_hidden_state"][:, 0, :]
             else:
                 return outputs.last_hidden_state[:, 0, :]
+        
+        elif self.config.forward_type == "sbert_mean":
+            token_embeddings = outputs["last_hidden_state"]
+            input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+            sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            return sum_embeddings / sum_mask
             
-
-
+    
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
         Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
@@ -129,6 +140,35 @@ class MultitaskBERT(nn.Module):
         
         # Return raw logits for MSE
         return logits
+
+    def predict_similarity_sbert(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+        """
+        SBERT similarity prediction using cosine similarity
+        """
+        # Get sentence embeddings using SBERT mean pooling
+        emb1 = self.forward(input_ids_1, attention_mask_1)
+        emb2 = self.forward(input_ids_2, attention_mask_2)
+        
+        # Normalize embeddings
+        emb1 = F.normalize(emb1, p=2, dim=1)
+        emb2 = F.normalize(emb2, p=2, dim=1)
+        
+        # Cosine similarity
+        cosine_sim = torch.sum(emb1 * emb2, dim=1)
+        # For MSE
+        return cosine_sim
+    
+    def predict_similarity_simcse(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+        """
+        SBERT similarity prediction using cosine similarity
+        """
+        # Get sentence embeddings using SBERT mean pooling
+        emb1_a = self.forward(input_ids_1, attention_mask_1)
+        emb1_b = self.forward(input_ids_1, attention_mask_1)
+        emb2_a = self.forward(input_ids_2, attention_mask_2)
+        emb2_b = self.forward(input_ids_2, attention_mask_2)
+        
+        return emb1_a, emb1_b, emb2_a, emb2_b
         
     def predict_sentiment(self, input_ids, attention_mask):
         """
@@ -183,7 +223,6 @@ class MultitaskBERT(nn.Module):
         
         return logits
     
-
 def save_model(model, optimizer, args, config, filepath):
     save_info = {
         "model": model.state_dict(),
@@ -200,10 +239,9 @@ def save_model(model, optimizer, args, config, filepath):
 
 
 ####################### STS Fine-Tuning improvement ##########################
-
-def simcse_contrastive_loss(self, emb1, emb2, temperature=0.05):
+def simcse_contrastive_loss( emb1, emb2, temperature=0.05):
     """
-    Correct SimCSE contrastive loss matching the paper exactly
+    SimCSE contrastive loss
     """
     batch_size = emb1.size(0)
     
@@ -216,12 +254,24 @@ def simcse_contrastive_loss(self, emb1, emb2, temperature=0.05):
     
     # Create labels: diagonal elements are positives
     labels = torch.arange(batch_size).to(emb1.device)
-    
-    # The paper's loss: -log(exp(sim_pos) / sum(exp(sim_neg)))
-    # This is equivalent to cross_entropy with sim_matrix as logits
+
     loss = F.cross_entropy(sim_matrix, labels)
-    
     return loss
+
+def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, last_epoch=-1):
+    """
+    Create a schedule with a learning rate that decreases linearly from the initial lr set in the optimizer to 0, after
+    a warmup period during which it increases linearly from 0 to the initial lr set in the optimizer.
+    """
+    def lr_lambda(current_step: int):
+        if current_step < num_warmup_steps:
+            return float(current_step) / float(max(1, num_warmup_steps))
+        return max(
+            0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
+        )
+
+    return LambdaLR(optimizer, lr_lambda, last_epoch)
+
 
 ################################ BONUS TASK #####################################
 
@@ -279,6 +329,7 @@ def train_multitask(args):
     sts_dev_dataloader = None
     etpc_train_dataloader = None
     etpc_dev_dataloader = None
+
 
     # SST dataset
     if args.task == "sst" or args.task == "multitask":
@@ -360,6 +411,15 @@ def train_multitask(args):
             collate_fn=etpc_dev_dataset.collate_fn,
         )
 
+    # Learn the number of steps for the scheduler
+    total_steps = 0
+    if (args.task == "sts" or args.task == "multitask"):
+        total_steps += len(sts_train_dataloader) * args.epochs
+    if (args.task == "etpc" or args.task == "multitask"):
+        total_steps += len(etpc_train_dataloader) * args.epochs
+
+    num_warmup_steps = int(total_steps * args.warmup_ratio)
+
     ## Initialize model
     config = {
         "hidden_dropout_prob": args.hidden_dropout_prob,
@@ -367,8 +427,9 @@ def train_multitask(args):
         "data_dir": ".",
         "option": args.option,
         "local_files_only": args.local_files_only,
-        "regressor_type": args.regressor_type, #NEW
+        "regressor_type": args.regressor_type,
         "forward_type": args.forward_type,
+        "sts_training_type": args.sts_training_type,
     }
     config = SimpleNamespace(**config)
 
@@ -397,7 +458,13 @@ def train_multitask(args):
         # Default optimizer
         lr = args.lr
         optimizer = AdamW(model.parameters(), lr=lr)
-
+    
+    # Learning rate scheduler
+    scheduler = get_linear_schedule_with_warmup(
+    optimizer,
+    num_warmup_steps=num_warmup_steps,
+    num_training_steps=total_steps
+    )
 
     best_dev_acc = float("-inf")
 
@@ -443,32 +510,130 @@ def train_multitask(args):
 
         # STS training
         if args.task == "sts" or args.task == "multitask":
-            for batch in tqdm(
-                sts_train_dataloader,
-                desc=f"train-sts-{epoch+1:02}",
-                disable=TQDM_DISABLE,
-            ):
-                b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                    batch["token_ids_1"].to(device),
-                    batch["attention_mask_1"].to(device),
-                    batch["token_ids_2"].to(device),
-                    batch["attention_mask_2"].to(device),
-                    batch["labels"].to(device).float(),
-                )
+            
+            # Standard
+            if config.sts_training_type == "standard":
+                for batch in tqdm(
+                    sts_train_dataloader,
+                    desc=f"train-sts-{epoch+1:02}",
+                    disable=TQDM_DISABLE,
+                ):
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
 
-                optimizer.zero_grad()
-                predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                loss = F.mse_loss(predictions, b_labels.view(-1))
+                    optimizer.zero_grad()
+                    predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                    loss = F.mse_loss(predictions, b_labels.view(-1))
 
-                if config.option == "finetune":
-                    loss.backward()
-                    optimizer.step()
+                    if config.option == "finetune":
+                        loss.backward()
+                        optimizer.step()
+                        scheduler.step()
 
-                train_loss += loss.item()
-                num_batches += 1
+                    train_loss += loss.item()
+                    num_batches += 1
+            
+            # Sbert
+            elif config.sts_training_type == "sbert":
+                for batch in tqdm(
+                    sts_train_dataloader,
+                    desc=f"train-sts-{epoch+1:02}",
+                    disable=TQDM_DISABLE,
+                ):
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
 
-                if num_batches == 2:
-                    break
+                    optimizer.zero_grad()
+                    predictions = model.predict_similarity_sbert(b_ids1, b_mask1, b_ids2, b_mask2)
+                    loss = F.mse_loss(predictions, b_labels.view(-1))
+
+                    if config.option == "finetune":
+                        loss.backward()
+                        optimizer.step()
+                        scheduler.step()
+
+                    train_loss += loss.item()
+                    num_batches += 1
+            
+            # SimCSE
+            elif config.sts_training_type == "simcse":
+                for batch in tqdm(
+                    sts_train_dataloader,
+                    desc=f"train-sts-simcse-{epoch+1:02}",
+                    disable=TQDM_DISABLE,
+                ):
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
+
+                    optimizer.zero_grad()
+
+                    emb1_a, emb1_b, emb2_a, emb2_b =  model.predict_similarity_simcse(b_ids1, b_mask1, b_ids2, b_mask2,)
+                    simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
+                    simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
+                    
+                    # Total loss
+                    loss = simcse_loss1 + simcse_loss2
+                    
+                    if config.option == "finetune":
+                        loss.backward()
+                        optimizer.step()
+                        scheduler.step()
+
+                    train_loss += loss.item()
+                    num_batches += 1
+
+            elif config.sts_training_type == "simcse_sbert":
+
+                for batch in tqdm(
+                    sts_train_dataloader,
+                    desc=f"train-sts-combined-{epoch+1:02}",
+                    disable=TQDM_DISABLE,
+                ):
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
+
+                    optimizer.zero_grad()
+
+                    # SimCSE loss
+                    emb1_a, emb1_b, emb2_a, emb2_b =  model.predict_similarity_simcse(b_ids1, b_mask1, b_ids2, b_mask2,)
+                    simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
+                    simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
+                    simcse_loss = simcse_loss1 + simcse_loss2
+                    
+                    # SBERT Loss
+                    predictions =model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                    sts_loss = F.mse_loss(predictions, b_labels.view(-1))
+                    
+                    # Combined Loss
+                    loss = args.alpha * simcse_loss + (1 - args.alpha) * sts_loss
+                    
+                    if config.option == "finetune":
+                        loss.backward()
+                        optimizer.step()
+                        scheduler.step()
+
+                    train_loss += loss.item()
+                    num_batches += 1
 
         # QQP training
         if args.task == "qqp" or args.task == "multitask":
@@ -524,6 +689,7 @@ def train_multitask(args):
                 if config.option == "finetune":
                     loss.backward()
                     optimizer.step()
+                    scheduler.step()
 
                 train_loss += loss.item()
                 num_batches += 1
@@ -531,23 +697,77 @@ def train_multitask(args):
 
         train_loss = train_loss / num_batches
 
-        if args.task == "sts" or args.task == "multitask":
-            for batch in sts_dev_dataloader:
-                b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                    batch["token_ids_1"].to(device),
-                    batch["attention_mask_1"].to(device),
-                    batch["token_ids_2"].to(device),
-                    batch["attention_mask_2"].to(device),
-                    batch["labels"].to(device).float(),
-                )
-                
-                predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                loss = F.mse_loss(predictions, b_labels.view(-1))
-                dev_loss += loss.item()
-                dev_num_batches += 1
+        if config.sts_training_type == "standard":
+            if args.task == "sts" or args.task == "multitask":
+                for batch in sts_dev_dataloader:
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
+                    
+                    predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                    loss = F.mse_loss(predictions, b_labels.view(-1))
+                    dev_loss += loss.item()
+                    dev_num_batches += 1
 
-                if dev_num_batches == 2:
-                    break
+        elif config.sts_training_type == "sbert":
+            if args.task == "sts" or args.task == "multitask":
+                for batch in sts_dev_dataloader:
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
+                    
+                    predictions = model.predict_similarity_sbert(b_ids1, b_mask1, b_ids2, b_mask2)
+                    loss = F.mse_loss(predictions, b_labels.view(-1))
+                    dev_loss += loss.item()
+                    dev_num_batches += 1
+            
+        
+        elif config.sts_training_type == "simcse":
+            if args.task == "sts" or args.task == "multitask":
+                for batch in sts_dev_dataloader:
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
+                    
+                    emb1_a, emb1_b, emb2_a, emb2_b = model.predict_similarity_simcse(b_ids1, b_mask1, b_ids2, b_mask2)
+                    simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
+                    simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
+                    dev_loss += (simcse_loss1 + simcse_loss2).item()
+                    dev_num_batches += 1
+        
+        elif config.sts_training_type == "simcse_sbert":
+            if args.task == "sts" or args.task == "multitask":
+                for batch in sts_dev_dataloader:
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
+                    
+                    emb1_a, emb1_b, emb2_a, emb2_b = model.predict_similarity_simcse(b_ids1, b_mask1, b_ids2, b_mask2)
+                    simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
+                    simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
+
+                    predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                    sts_loss = F.mse_loss(predictions, b_labels.view(-1))
+                    
+                    dev_loss += args.alpha * simcse_loss1 + (1 - args.alpha) * sts_loss
+                    dev_num_batches += 1
+        
         
         dev_loss = dev_loss / dev_num_batches
 
@@ -661,7 +881,7 @@ def get_args():
         "--regressor_type",
         type=str,
         help="Type of regressor to use: simple or complex",
-        choices=("simple", "complex"),
+        choices=("simple", "complex", "sbert"),
         default="simple",
     )
 
@@ -670,9 +890,24 @@ def get_args():
         "--forward_type",
         type=str,
         help="Type of forward function: pooler or raw_cls",
-        choices=("pooler", "raw_cls"),
+        choices=("pooler", "raw_cls", "sbert_mean"),
         default="pooler",
     )
+
+    # NEW: Add STS training type argument
+    parser.add_argument(
+        "--sts_training_type",
+        type=str,
+        help="Type of STS training",
+        choices=("standard", "sbert", "simcse", "sbert_simcse"),
+        default="pooler",
+    )
+
+    # NEW: Add alpha value
+    parser.add_argument("--alpha", type=float, default=0.5, help="Weight for SimCSE loss in combined training")
+
+    # Add warmup ratio argument
+    parser.add_argument("--warmup_ratio", type=float, default=0.1, help="Percentage of total steps for warmup (0.1 = 10%)")
 
     args, _ = parser.parse_known_args()
     print(f"args: {args}")

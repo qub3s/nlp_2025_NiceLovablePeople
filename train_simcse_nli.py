@@ -93,6 +93,13 @@ class STSEvaluator:
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
         self.sts_dropout = nn.Dropout(0.3)
     
+    def to(self, device):
+        """Move all components to the specified device"""
+        self.simcse_model.to(device)
+        self.sts_regressor.to(device)
+        self.sts_dropout.to(device)
+        return self
+    
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """Your existing STS prediction function"""
         emb1 = self.simcse_model(input_ids_1, attention_mask_1)
@@ -216,6 +223,10 @@ def train_simcse(args):
     tokenizer = model.tokenizer
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
+
+    # Add memory optimization
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     
     # Load your local SNLI dataset
     train_file = "data/snli_1.0_train.jsonl"
@@ -245,7 +256,7 @@ def train_simcse(args):
 
     dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    evaluator = STSEvaluator(model)
+    evaluator = STSEvaluator(model).to(device)
     
     best_sts_corr = -1
     best_model_state = None
