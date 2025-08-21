@@ -101,7 +101,6 @@ class MultitaskBERT(nn.Module):
         attention_mask: attention mask for the input
         Returns: pooled sentence embedding of size [batch_size, hidden_size]
         """
-        return model_output["last_hidden_state"]
         token_embeddings = model_output["last_hidden_state"]
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
         sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
@@ -164,7 +163,7 @@ class MultitaskBERT(nn.Module):
         # raise NotImplementedError
 
     def predict_paraphrase(
-        self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2, labels=None
+        self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2, return_embeddings=False
     ):
         """
         Given a batch of pairs of sentences, outputs a single logit for predicting whether they are paraphrases.
@@ -178,32 +177,22 @@ class MultitaskBERT(nn.Module):
         SBERT Implementation for paraphrase detection.
         Processes each sentence separately and combines their embeddings for classification.
         """
+        # Get embeddings for both sentences
         u = self.forward(input_ids_1, attention_mask_1)
         v = self.forward(input_ids_2, attention_mask_2)
 
         u = self.paraphrase_dropout(u)
         v = self.paraphrase_dropout(v)
 
+        if return_embeddings:
+            # Für MNRL: Gib die Embeddings zurück, um sie im Loss zu vergleichen
+            return u, v
+
+        # Nur für Inferenz: Der originale Pfad zur Klassifikation
         abs_diff = torch.abs(u - v)
-
-        # Concatenate features
         combined_features = torch.cat([u, v, abs_diff], dim=-1)
-
-        # Compute logits
-        logits = self.paraphrase_classifier(combined_features)
-        
-        contrastive_loss = None
-        if labels is not None: # Nur im Training berechnen
-            # Ziel: Ähnliche Fragen (label=1) sollen Embeddings mit hoher Cos-Sim haben.
-            # Unähnliche Fragen (label=0) sollen Embeddings mit niedriger Cos-Sim haben.
-            cosine_sim = F.cosine_similarity(u, v) # Shape: [batch_size]
-            # Konvertiere Labels von (0,1) zu (-1, 1) für CosineEmbeddingLoss
-            target = (labels * 2) - 1 # Map 0 -> -1, 1 -> 1
-            contrastive_loss = F.cosine_embedding_loss(cosine_sim, torch.ones_like(cosine_sim), target)
-        # --- ENDE NEU ---
-
-        # Return both the logits and the contrastive loss
-        return logits, contrastive_loss
+        logits = self.paraphrase_classifier(combined_features).squeeze(-1)
+        return logits
 
     def predict_paraphrase_types(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
@@ -515,17 +504,36 @@ def train_multitask(args):
                 b_ids_2 = b_ids_2.to(device)
                 b_mask_2 = b_mask_2.to(device)
                 b_labels = b_labels.to(device)
-
+                
+                
                 optimizer.zero_grad()
-                logits, contrastive_loss = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels)
+
+                # 1. Holen Sie die Embeddings für MNRL-style Contrastive Learning
+                u, v = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2, return_embeddings=True)
+
+                # 2. Contrastive Loss berechnen (wie zuvor)
+                u_norm = F.normalize(u, p=2, dim=1)
+                v_norm = F.normalize(v, p=2, dim=1)
+                similarity_matrix = torch.mm(u_norm, v_norm.T)
+                temperature = 0.05
+                similarity_matrix = similarity_matrix / temperature
+                labels = torch.arange(similarity_matrix.size(0)).to(similarity_matrix.device)
+                contrastive_loss = F.cross_entropy(similarity_matrix, labels)
+
+                # 3. HOLEN SIE AUCH DIE LOGITS FÜR DEN KLASSIKATOR
+                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2, return_embeddings=False)
+
+                # 4. Binary Cross-Entropy Loss für Klassifikation berechnen
                 cls_loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
-                total_loss = cls_loss + 0.2 * contrastive_loss
+
+                # 5. KOMBINATION BEIDER LOSSES (Hyperparameter anpassbar)
+                total_loss = cls_loss + 0.1 * contrastive_loss  # Contrastive Loss als Regularizer
 
                 if config.option == "finetune":
                     total_loss.backward()
                     optimizer.step()
 
-                train_loss += total_loss.item() 
+                train_loss += total_loss.item()
                 
                 num_batches += 1
                 if num_batches > 10 and args.fastEpoch:
