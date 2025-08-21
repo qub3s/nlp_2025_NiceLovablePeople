@@ -101,6 +101,7 @@ class MultitaskBERT(nn.Module):
         attention_mask: attention mask for the input
         Returns: pooled sentence embedding of size [batch_size, hidden_size]
         """
+        return model_output["last_hidden_state"]
         token_embeddings = model_output["last_hidden_state"]
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
         sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
@@ -163,7 +164,7 @@ class MultitaskBERT(nn.Module):
         # raise NotImplementedError
 
     def predict_paraphrase(
-        self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
+        self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2, labels=None
     ):
         """
         Given a batch of pairs of sentences, outputs a single logit for predicting whether they are paraphrases.
@@ -191,7 +192,18 @@ class MultitaskBERT(nn.Module):
         # Compute logits
         logits = self.paraphrase_classifier(combined_features)
         
-        return logits.squeeze(-1)
+        contrastive_loss = None
+        if labels is not None: # Nur im Training berechnen
+            # Ziel: Ähnliche Fragen (label=1) sollen Embeddings mit hoher Cos-Sim haben.
+            # Unähnliche Fragen (label=0) sollen Embeddings mit niedriger Cos-Sim haben.
+            cosine_sim = F.cosine_similarity(u, v) # Shape: [batch_size]
+            # Konvertiere Labels von (0,1) zu (-1, 1) für CosineEmbeddingLoss
+            target = (labels * 2) - 1 # Map 0 -> -1, 1 -> 1
+            contrastive_loss = F.cosine_embedding_loss(cosine_sim, torch.ones_like(cosine_sim), target)
+        # --- ENDE NEU ---
+
+        # Return both the logits and the contrastive loss
+        return logits, contrastive_loss
 
     def predict_paraphrase_types(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
@@ -505,14 +517,16 @@ def train_multitask(args):
                 b_labels = b_labels.to(device)
 
                 optimizer.zero_grad()
-                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-                loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
+                logits, contrastive_loss = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2, b_labels)
+                cls_loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
+                total_loss = cls_loss + 0.2 * contrastive_loss
 
                 if config.option == "finetune":
-                    loss.backward()
+                    total_loss.backward()
                     optimizer.step()
 
-                train_loss += loss.item()
+                train_loss += total_loss.item() 
+                
                 num_batches += 1
                 if num_batches > 10 and args.fastEpoch:
                     break
