@@ -62,16 +62,19 @@ def load_sts_data(sts_filename, split="train"):
 
 class SimCSEBERT(torch.nn.Module):
     """Simplified BERT model for SimCSE training - compatible with your tokenization"""
-    def __init__(self, model_name="bert-base-uncased"):
+    def __init__(self, model_name="bert-base-uncased", dropout_prob=0.1):
         super().__init__()
         self.bert = BertModel.from_pretrained(model_name)
+
+        for module in self.bert.modules():
+            if isinstance(module, nn.Dropout):
+                module.p = dropout_prob
+        
     
     def forward(self, input_ids, attention_mask):
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        if isinstance(outputs, dict):
-            return outputs["last_hidden_state"][:, 0, :]  # [CLS] token
-        else:
-            return outputs.last_hidden_state[:, 0, :]  # [CLS] token
+        cls_embedding = outputs.last_hidden_state[:, 0, :]
+        return cls_embedding
     
     def simcse_loss(self, emb1, emb2, temperature=0.05):
         """SimCSE contrastive loss"""
@@ -90,11 +93,9 @@ class SimCSEBERT(torch.nn.Module):
         
         # Cross entropy loss for both directions
         loss1 = F.cross_entropy(neg_sim, labels)
-        loss2 = F.cross_entropy(neg_sim.T, labels)  # Transpose for symmetric loss
+        loss2 = F.cross_entropy(neg_sim.T, labels)
         
         return (loss1 + loss2) / 2
-
-# REMOVED STSEvaluator class - no regression head needed!
 
 class ContrastiveSNLIDataset(Dataset):
     """Dataset that uses SNLI sentences for contrastive learning"""
@@ -195,7 +196,7 @@ def evaluate_sts_cosine_spearman(model, sts_dataloader, device):
 
 def train_simcse(args):
     # Initialize model
-    model = SimCSEBERT()
+    model = SimCSEBERT(dropout_prob=args.dropout_prob)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
@@ -286,6 +287,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--temperature", type=float, default=0.05)
+    parser.add_argument("--dropout_prob", type=float, default=0.1, help="Dropout probability for contrastive learning")
     parser.add_argument("--small_subset", action="store_true", help="Use small subset for testing")
     parser.add_argument("--subset_size", type=int, default=20_000, help="Size of subset for hyperparameter tuning")
     parser.add_argument("--local_files_only", action="store_true", help="Use only local model files")
@@ -296,3 +298,5 @@ if __name__ == "__main__":
     os.makedirs("data", exist_ok=True)
     
     train_simcse(args)
+    
+    
