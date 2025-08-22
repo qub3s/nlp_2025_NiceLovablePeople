@@ -73,8 +73,10 @@ class SimCSEBERT(torch.nn.Module):
     
     def forward(self, input_ids, attention_mask):
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        cls_embedding = outputs.last_hidden_state[:, 0, :]
-        return cls_embedding
+        if isinstance(outputs, dict):
+                return outputs["last_hidden_state"][:, 0, :]
+        else:
+            return outputs.last_hidden_state[:, 0, :]
     
     def simcse_loss(self, emb1, emb2, temperature=0.05):
         """SimCSE contrastive loss"""
