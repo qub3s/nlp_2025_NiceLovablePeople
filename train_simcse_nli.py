@@ -65,7 +65,6 @@ class SimCSEBERT(torch.nn.Module):
     def __init__(self, model_name="bert-base-uncased"):
         super().__init__()
         self.bert = BertModel.from_pretrained(model_name)
-        # No need for separate tokenizer - it's handled by the dataset
     
     def forward(self, input_ids, attention_mask):
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
@@ -80,36 +79,22 @@ class SimCSEBERT(torch.nn.Module):
         emb1 = F.normalize(emb1, dim=1)
         emb2 = F.normalize(emb2, dim=1)
         
-        sim_matrix = torch.matmul(emb1, emb2.T) / temperature
+        # Positive pairs are on the diagonal
+        pos_sim = (emb1 * emb2).sum(dim=1) / temperature
+        
+        # Negative similarities
+        neg_sim = torch.matmul(emb1, emb2.T) / temperature
+        
+        # Create labels: positive pairs are on the diagonal
         labels = torch.arange(batch_size).to(emb1.device)
         
-        return F.cross_entropy(sim_matrix, labels)
+        # Cross entropy loss for both directions
+        loss1 = F.cross_entropy(neg_sim, labels)
+        loss2 = F.cross_entropy(neg_sim.T, labels)  # Transpose for symmetric loss
+        
+        return (loss1 + loss2) / 2
 
-class STSEvaluator:
-    """Uses your existing STS prediction logic"""
-    def __init__(self, simcse_model):
-        self.simcse_model = simcse_model
-        # Add your regression head for evaluation only
-        self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
-        self.sts_dropout = nn.Dropout(0.3)
-    
-    def to(self, device):
-        """Move all components to the specified device"""
-        self.simcse_model.to(device)
-        self.sts_regressor.to(device)
-        self.sts_dropout.to(device)
-        return self
-    
-    def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
-        """Your existing STS prediction function"""
-        emb1 = self.simcse_model(input_ids_1, attention_mask_1)
-        emb2 = self.simcse_model(input_ids_2, attention_mask_2)
-        
-        features = torch.cat([emb1, emb2, torch.abs(emb1 - emb2)], dim=1)
-        features = self.sts_dropout(features)
-        logits = self.sts_regressor(features).squeeze()
-        
-        return logits
+# REMOVED STSEvaluator class - no regression head needed!
 
 class ContrastiveSNLIDataset(Dataset):
     """Dataset that uses SNLI sentences for contrastive learning"""
@@ -177,41 +162,36 @@ class ContrastiveSNLIDataset(Dataset):
 
         return batched_data
 
-def evaluate_sts_spearman(evaluator, sts_dataloader, device):
-        """Use your exact evaluation code format with STSEvaluator"""
-        sts_y_true = []
-        sts_y_pred = []
-        sts_sent_ids = []
-
-        evaluator.simcse_model.eval()  # Set to eval mode
-        with torch.no_grad():
-            for batch in tqdm(sts_dataloader, desc="STS Eval", disable=TQDM_DISABLE):
-                (b_ids1, b_mask1, b_ids2, b_mask2, b_labels, b_sent_ids) = (
-                    batch["token_ids_1"],
-                    batch["attention_mask_1"],
-                    batch["token_ids_2"],
-                    batch["attention_mask_2"],
-                    batch["labels"],
-                    batch["sent_ids"],
-                )
-
-                b_ids1 = b_ids1.to(device)
-                b_mask1 = b_mask1.to(device)
-                b_ids2 = b_ids2.to(device)
-                b_mask2 = b_mask2.to(device)
-
-                # Use STSEvaluator's predict_similarity
-                logits = evaluator.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                y_hat = logits.flatten().cpu().numpy()
-                b_labels = b_labels.flatten().cpu().numpy()
-
-                sts_y_pred.extend(y_hat)
-                sts_y_true.extend(b_labels)
-                sts_sent_ids.extend(b_sent_ids)
-
-        # Use Spearman correlation
-        spearman_corr = spearmanr(sts_y_pred, sts_y_true).correlation
-        return spearman_corr
+def evaluate_sts_cosine_spearman(model, sts_dataloader, device):
+    """Evaluate using cosine similarity (original SimCSE approach)"""
+    sts_y_true = []
+    sts_y_pred = []
+    
+    model.eval()
+    with torch.no_grad():
+        for batch in tqdm(sts_dataloader, desc="STS Eval", disable=TQDM_DISABLE):
+            # Get batch data
+            b_ids1 = batch["token_ids_1"].to(device)
+            b_mask1 = batch["attention_mask_1"].to(device)
+            b_ids2 = batch["token_ids_2"].to(device)
+            b_mask2 = batch["attention_mask_2"].to(device)
+            b_labels = batch["labels"].cpu().numpy()  # Human scores (0-5)
+            
+            # Get sentence embeddings
+            emb1 = model(b_ids1, b_mask1)
+            emb2 = model(b_ids2, b_mask2)
+            
+            # Normalize and compute cosine similarity (-1 to 1)
+            emb1 = F.normalize(emb1, dim=1)
+            emb2 = F.normalize(emb2, dim=1)
+            cosine_sims = torch.sum(emb1 * emb2, dim=1).cpu().numpy()
+            
+            sts_y_pred.extend(cosine_sims)
+            sts_y_true.extend(b_labels)
+    
+    # Calculate Spearman correlation between cosine sim and human scores
+    spearman_corr = spearmanr(sts_y_pred, sts_y_true).correlation
+    return spearman_corr
 
 def train_simcse(args):
     # Initialize model
@@ -250,7 +230,6 @@ def train_simcse(args):
     )
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    evaluator = STSEvaluator(model).to(device)
     
     best_sts_corr = -1
     best_model_state = None
@@ -268,8 +247,8 @@ def train_simcse(args):
             optimizer.zero_grad()
             
             # Pass the same batch through twice with different dropout
-            emb1 = model(input_ids, attention_mask)  # First pass
-            emb2 = model(input_ids, attention_mask)  # Second pass (different dropout)
+            emb1 = model(input_ids, attention_mask)
+            emb2 = model(input_ids, attention_mask)
             
             loss = model.simcse_loss(emb1, emb2, temperature=args.temperature)
             
@@ -282,8 +261,8 @@ def train_simcse(args):
         avg_loss = total_loss / len(dataloader)
         print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
         
-        # Evaluate on STS after each epoch
-        sts_corr = evaluate_sts_spearman(evaluator, sts_dev_dataloader, device)
+        # Evaluate on STS after each epoch USING COSINE SIMILARITY
+        sts_corr = evaluate_sts_cosine_spearman(model, sts_dev_dataloader, device)
         print(f"Epoch {epoch+1} - STS Spearman Correlation: {sts_corr:.4f}")
         
         if sts_corr > best_sts_corr:
@@ -293,8 +272,8 @@ def train_simcse(args):
             print(f"New best model saved with Spearman: {sts_corr:.4f}")
     
     # Final evaluation
-    dev_corr = evaluate_sts_spearman(evaluator, sts_dev_dataloader, device)
-    print(f"Final Dev STS Spearman Correlation: {dev_corr:.4f}")
+    final_corr = evaluate_sts_cosine_spearman(model, sts_dev_dataloader, device)
+    print(f"Final Dev STS Spearman Correlation: {final_corr:.4f}")
     
     torch.save(model.state_dict(), "models/simcse_nli/final_model.pt")
     print("Final model saved.")
