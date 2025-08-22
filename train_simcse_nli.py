@@ -111,74 +111,56 @@ class STSEvaluator:
         
         return logits
 
-class SNLIDataset(torch.utils.data.Dataset):
-    """Custom dataset loader for local SNLI files"""
+class ContrastiveSNLIDataset(torch.utils.data.Dataset):
+    """Dataset that uses SNLI sentences for contrastive learning"""
     def __init__(self, file_path, tokenizer, max_length=128, sample_size=None):
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.data = self._load_snli_data(file_path, sample_size)
+        self.sentences = self._load_sentences(file_path, sample_size)
         
-    def _load_snli_data(self, file_path, sample_size):
-        """Load SNLI data from JSONL files"""
-        data = []
-        print(f"Loading SNLI data from {file_path}...")
+    def _load_sentences(self, file_path, sample_size):
+        """Extract all unique sentences from SNLI"""
+        sentences = set()
+        print(f"Loading sentences from SNLI data at {file_path}...")
         
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 for line in tqdm(f, desc="Reading lines"):
                     item = json.loads(line)
                     
-                    # Skip invalid or poorly formatted examples
-                    if (item['gold_label'] not in ['entailment', 'neutral', 'contradiction'] or 
-                        not item['sentence1'] or not item['sentence2']):
-                        continue
+                    # Add both premise and hypothesis
+                    if item['sentence1']:
+                        sentences.add(item['sentence1'])
+                    if item['sentence2']:
+                        sentences.add(item['sentence2'])
                     
-                    data.append({
-                        'premise': item['sentence1'],
-                        'hypothesis': item['sentence2'], 
-                        'label': item['gold_label']
-                    })
-                    
-                    # Early stop if sampling
-                    if sample_size and len(data) >= sample_size:
+                    if sample_size and len(sentences) >= sample_size:
                         break
-        except FileNotFoundError:
-            print(f"SNLI file not found: {file_path}")
-            return []
         except Exception as e:
             print(f"Error loading SNLI data: {e}")
             return []
         
-        print(f"Loaded {len(data)} valid examples")
-        return data
+        sentences = list(sentences)
+        print(f"Loaded {len(sentences)} unique sentences")
+        return sentences
     
     def __len__(self):
-        return len(self.data)
+        return len(self.sentences)
     
     def __getitem__(self, idx):
-        item = self.data[idx]
-        # Tokenization code remains the same as before
-        premise = self.tokenizer(
-            item['premise'],
+        sentence = self.sentences[idx]
+        # Tokenize the same sentence (will be passed twice with different dropout)
+        tokens = self.tokenizer(
+            sentence,
             truncation=True,
             padding='max_length',
             max_length=self.max_length,
             return_tensors='pt'
         )
-        hypothesis = self.tokenizer(
-            item['hypothesis'],
-            truncation=True,
-            padding='max_length', 
-            max_length=self.max_length,
-            return_tensors='pt'
-        )
         
         return {
-            'premise_ids': premise['input_ids'].squeeze(),
-            'premise_mask': premise['attention_mask'].squeeze(),
-            'hypothesis_ids': hypothesis['input_ids'].squeeze(),
-            'hypothesis_mask': hypothesis['attention_mask'].squeeze(),
-            'label': item['label']
+            'input_ids': tokens['input_ids'].squeeze(),
+            'attention_mask': tokens['attention_mask'].squeeze(),
         }
 
 def evaluate_sts_spearman(evaluator, sts_dataloader, device):
@@ -224,28 +206,20 @@ def train_simcse(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    # Add memory optimization
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    
-    # Load your local SNLI dataset
+    # Load sentences for contrastive learning
     train_file = "data/snli_1.0_train.jsonl"
-    train_dataset = SNLIDataset(
+    train_dataset = ContrastiveSNLIDataset(
         file_path=train_file,
         tokenizer=tokenizer,
         sample_size=args.subset_size if args.small_subset else None
     )
     
-    # Check if we have any training data
     if len(train_dataset) == 0:
         print("No training data available. Exiting.")
         return None, -1
     
-    # Load STS dev data - using our simplified function
+    # Load STS dev data
     sts_dev_data = load_sts_data("data/sts-similarity-dev.csv", split="dev")
-    
-    # Create dataset and dataloader
-    args.local_files_only = False 
     sts_dev_dataset = SentencePairDataset(sts_dev_data, args)
     sts_dev_dataloader = DataLoader(
         sts_dev_dataset,
@@ -261,32 +235,53 @@ def train_simcse(args):
     best_sts_corr = -1
     best_model_state = None
     
-    # Training loop
+    # Training loop - FIXED
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.epochs}")
         
-        for batch in progress_bar:
-            premise_ids = batch['premise_ids'].to(device)
-            premise_mask = batch['premise_mask'].to(device)
-            hypothesis_ids = batch['hypothesis_ids'].to(device)
-            hypothesis_mask = batch['hypothesis_mask'].to(device)
+        # Training loop - FIXED
+        for epoch in range(args.epochs):
+            model.train()
+            total_loss = 0
+            progress_bar = tqdm(enumerate(dataloader), desc=f"Epoch {epoch+1}/{args.epochs}", total=len(dataloader))
             
-            optimizer.zero_grad()
-            
-            # Get embeddings for both sentences
-            premise_emb = model(premise_ids, premise_mask)
-            hypothesis_emb = model(hypothesis_ids, hypothesis_mask)
-            
-            # SimCSE loss
-            loss = model.simcse_loss(premise_emb, hypothesis_emb, temperature=args.temperature)
-            
-            loss.backward()
-            optimizer.step()
-            
-            total_loss += loss.item()
-            progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
+            for i, batch in progress_bar:  # Added enumerate here
+                input_ids = batch['input_ids'].to(device)
+                attention_mask = batch['attention_mask'].to(device)
+                
+                optimizer.zero_grad()
+                
+                # CRITICAL: Pass the SAME batch through TWICE with different dropout
+                emb1 = model(input_ids, attention_mask)  # First pass
+                emb2 = model(input_ids, attention_mask)  # Second pass (different dropout)
+
+                # Add this after the first few batches to check if contrastive learning is working
+                if epoch == 0 and i == 0:  # First batch of first epoch
+                    with torch.no_grad():
+                        # Check cosine similarity between positive pairs
+                        cosine_sim = F.cosine_similarity(emb1, emb2)
+                        print(f"Debug - Positive pair similarity range: {cosine_sim.min():.3f} to {cosine_sim.max():.3f}")
+                        print(f"Debug - Average positive similarity: {cosine_sim.mean():.3f}")
+                        
+                        # Check embedding norms
+                        print(f"Debug - Embedding norms: {torch.norm(emb1, dim=1).mean():.3f}")
+
+                        # Also check the loss components to understand what's happening
+                        emb1_norm = F.normalize(emb1, dim=1)
+                        emb2_norm = F.normalize(emb2, dim=1)
+                        sim_matrix = torch.matmul(emb1_norm, emb2_norm.T) / args.temperature
+                        print(f"Debug - Similarity matrix range: {sim_matrix.min():.3f} to {sim_matrix.max():.3f}")
+                
+                # Use the correct contrastive loss
+                loss = model.simcse_loss(emb1, emb2, temperature=args.temperature)
+                
+                loss.backward()
+                optimizer.step()
+                
+                total_loss += loss.item()
+                progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
         
         avg_loss = total_loss / len(dataloader)
         print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
@@ -295,17 +290,16 @@ def train_simcse(args):
         sts_corr = evaluate_sts_spearman(evaluator, sts_dev_dataloader, device)
         print(f"Epoch {epoch+1} - STS Spearman Correlation: {sts_corr:.4f}")
         
-        # Save best model
         if sts_corr > best_sts_corr:
             best_sts_corr = sts_corr
             best_model_state = model.state_dict().copy()
             torch.save(best_model_state, f"models/simcse_nli/best_model_epoch{epoch+1}_corr{sts_corr:.4f}.pt")
             print(f"New best model saved and Spearman: {sts_corr:.4f}")
     
+    # Final evaluation
     dev_corr = evaluate_sts_spearman(evaluator, sts_dev_dataloader, device)
     print(f"Dev STS Spearman Correlation: {dev_corr:.4f}")
     
-    # Save final model
     torch.save(model.state_dict(), "models/simcse_nli/final_model.pt")
     print("Final model saved.")
     
