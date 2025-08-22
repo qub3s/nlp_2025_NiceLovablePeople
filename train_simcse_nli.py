@@ -98,6 +98,35 @@ class SimCSEBERT(torch.nn.Module):
         loss2 = F.cross_entropy(neg_sim.T, labels)
         
         return (loss1 + loss2) / 2
+    
+    def supervised_simcse_loss(self, emb1, emb2, labels, temperature=0.05):
+        """Supervised SimCSE loss with hard negatives"""
+        batch_size = emb1.size(0)
+        emb1 = F.normalize(emb1, dim=1)
+        emb2 = F.normalize(emb2, dim=1)
+        
+        # Similarity matrix
+        sim_matrix = torch.matmul(emb1, emb2.T) / temperature
+        
+        # Create mask for positive pairs (diagonal for entailment pairs)
+        # Since we have mixed batch of positives and negatives, we need to handle labels
+        pos_mask = labels.unsqueeze(1)  # Positives have label 1
+        
+        # For positive pairs, we want to maximize similarity
+        # For negative pairs, we want to minimize similarity
+        
+        pos_sim = sim_matrix * pos_mask.float()
+        neg_sim = sim_matrix * (1 - pos_mask.float())
+        
+        # Contrastive loss
+        pos_loss = -torch.log(torch.exp(pos_sim) / torch.exp(sim_matrix).sum(dim=1, keepdim=True))
+        neg_loss = -torch.log(1 - torch.exp(neg_sim) / torch.exp(sim_matrix).sum(dim=1, keepdim=True))
+        
+        # Only consider non-zero elements
+        pos_loss = pos_loss[pos_mask.bool()].mean() if pos_mask.sum() > 0 else 0
+        neg_loss = neg_loss[(1 - pos_mask).bool()].mean() if (1 - pos_mask).sum() > 0 else 0
+        
+        return pos_loss + neg_loss
 
 class ContrastiveSNLIDataset(Dataset):
     """Dataset that uses SNLI sentences for contrastive learning"""
@@ -160,6 +189,90 @@ class ContrastiveSNLIDataset(Dataset):
             "attention_mask": attention_mask,
             "labels": labels,
             "sents": sents,
+            "sent_ids": sent_ids,
+        }
+
+        return batched_data
+
+class SupervisedNLIDataset(Dataset):
+    """Dataset for supervised SimCSE using NLI data"""
+    def __init__(self, file_path, args, sample_size=None):
+        self.entailment_pairs = []  # Positive pairs
+        self.contradiction_pairs = []  # Hard negatives
+        self._load_nli_pairs(file_path, sample_size)
+        self.p = args
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        
+        # Combine all data
+        self.all_data = self.entailment_pairs + self.contradiction_pairs
+
+    def _load_nli_pairs(self, file_path, sample_size):
+        print(f"Loading NLI pairs from {file_path}...")
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in tqdm(f, desc="Reading NLI lines"):
+                    item = json.loads(line)
+                    
+                    # Only use entailment and contradiction
+                    if item['gold_label'] == 'entailment':
+                        self.entailment_pairs.append((
+                            item['sentence1'], 
+                            item['sentence2'], 
+                            1,  # label: positive
+                            f"ent_{len(self.entailment_pairs)}"
+                        ))
+                    elif item['gold_label'] == 'contradiction':
+                        self.contradiction_pairs.append((
+                            item['sentence1'],
+                            item['sentence2'], 
+                            0,  # label: negative
+                            f"contra_{len(self.contradiction_pairs)}"
+                        ))
+                    
+                    if sample_size and len(self.entailment_pairs) >= sample_size // 2:
+                        break
+                        
+        except Exception as e:
+            print(f"Error loading NLI data: {e}")
+        
+        print(f"Loaded {len(self.entailment_pairs)} entailment pairs and {len(self.contradiction_pairs)} contradiction pairs")
+
+    def __len__(self):
+        return len(self.all_data)
+    
+    def __getitem__(self, idx):
+        return self.all_data[idx]
+    
+    def pad_data(self, data):
+        sents1 = [x[0] for x in data]
+        sents2 = [x[1] for x in data]
+        labels = [x[2] for x in data]
+        sent_ids = [x[3] for x in data]
+
+        # Tokenize both sentences
+        encoding1 = self.tokenizer(sents1, return_tensors="pt", padding=True, truncation=True)
+        encoding2 = self.tokenizer(sents2, return_tensors="pt", padding=True, truncation=True)
+        
+        token_ids1 = torch.LongTensor(encoding1["input_ids"])
+        attention_mask1 = torch.LongTensor(encoding1["attention_mask"])
+        token_ids2 = torch.LongTensor(encoding2["input_ids"])
+        attention_mask2 = torch.LongTensor(encoding2["attention_mask"])
+        labels = torch.LongTensor(labels)
+
+        return token_ids1, attention_mask1, token_ids2, attention_mask2, labels, sents1, sents2, sent_ids
+
+    def collate_fn(self, all_data):
+        token_ids1, attention_mask1, token_ids2, attention_mask2, labels, sents1, sents2, sent_ids = self.pad_data(all_data)
+
+        batched_data = {
+            "token_ids_1": token_ids1,
+            "attention_mask_1": attention_mask1,
+            "token_ids_2": token_ids2,
+            "attention_mask_2": attention_mask2,
+            "labels": labels,
+            "sents_1": sents1,
+            "sents_2": sents2,
             "sent_ids": sent_ids,
         }
 
@@ -283,22 +396,105 @@ def train_simcse(args):
     
     return model, best_sts_corr
 
+def train_supervised_simcse(args):
+    # Initialize model
+    model = SimCSEBERT(dropout_prob=args.dropout_prob)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
+    # Load supervised NLI data
+    train_file = "data/snli_1.0_train.jsonl"
+    train_dataset = SupervisedNLIDataset(
+        file_path=train_file,
+        args=args,
+        sample_size=args.subset_size if args.small_subset else None
+    )
+    
+    # Load STS dev data
+    sts_dev_data = load_sts_data("data/sts-similarity-dev.csv", split="dev")
+    sts_dev_dataset = SentencePairDataset(sts_dev_data, args, isRegression=True)
+    sts_dev_dataloader = DataLoader(
+        sts_dev_dataset,
+        shuffle=False,
+        batch_size=args.batch_size,
+        collate_fn=sts_dev_dataset.collate_fn
+    )
+
+    dataloader = DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=True,
+        collate_fn=train_dataset.collate_fn
+    )
+    
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    
+    best_sts_corr = -1
+    best_model_state = None
+    
+    for epoch in range(args.epochs):
+        model.train()
+        total_loss = 0
+        progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.epochs}")
+        
+        for batch in progress_bar:
+            input_ids1 = batch['token_ids_1'].to(device)
+            attention_mask1 = batch['attention_mask_1'].to(device)
+            input_ids2 = batch['token_ids_2'].to(device)
+            attention_mask2 = batch['attention_mask_2'].to(device)
+            labels = batch['labels'].to(device)
+            
+            optimizer.zero_grad()
+            
+            # Get embeddings for both sentences
+            emb1 = model(input_ids1, attention_mask1)
+            emb2 = model(input_ids2, attention_mask2)
+            
+            # Use supervised loss
+            loss = model.supervised_simcse_loss(emb1, emb2, labels, temperature=args.temperature)
+            
+            loss.backward()
+            optimizer.step()
+            
+            total_loss += loss.item()
+            progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
+        
+        avg_loss = total_loss / len(dataloader)
+        print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
+        
+        # Evaluate
+        sts_corr = evaluate_sts_cosine_spearman(model, sts_dev_dataloader, device)
+        print(f"Epoch {epoch+1} - STS Spearman Correlation: {sts_corr:.4f}")
+        
+        if sts_corr > best_sts_corr:
+            best_sts_corr = sts_corr
+            best_model_state = model.state_dict().copy()
+            torch.save(best_model_state, f"models/simcse_supervised/best_model_epoch{epoch+1}_corr{sts_corr:.4f}.pt")
+            print(f"New best model saved with Spearman: {sts_corr:.4f}")
+    
+    final_corr = evaluate_sts_cosine_spearman(model, sts_dev_dataloader, device)
+    print(f"Final Dev STS Spearman Correlation: {final_corr:.4f}")
+    
+    torch.save(model.state_dict(), "models/simcse_supervised/final_model.pt")
+    return model, best_sts_corr
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--temperature", type=float, default=0.05)
-    parser.add_argument("--dropout_prob", type=float, default=0.1, help="Dropout probability for contrastive learning")
-    parser.add_argument("--small_subset", action="store_true", help="Use small subset for testing")
-    parser.add_argument("--subset_size", type=int, default=20_000, help="Size of subset for hyperparameter tuning")
-    parser.add_argument("--local_files_only", action="store_true", help="Use only local model files")
+    parser.add_argument("--dropout_prob", type=float, default=0.1)
+    parser.add_argument("--small_subset", action="store_true")
+    parser.add_argument("--subset_size", type=int, default=20_000)
+    parser.add_argument("--supervised", action="store_true", help="Use supervised SimCSE")  # New flag
     args = parser.parse_args()
     
-    # Create directories if they don't exist
-    os.makedirs("models/simcse_nli", exist_ok=True)
-    os.makedirs("data", exist_ok=True)
+    os.makedirs("models/simcse_supervised", exist_ok=True)
     
-    train_simcse(args)
+    if args.supervised:
+        train_supervised_simcse(args)
+    else:
+        train_simcse(args)
     
     
