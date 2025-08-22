@@ -2,9 +2,8 @@ import argparse
 import os
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from transformers import AutoTokenizer
-from bert import BertModel  # your existing BERT import
+from torch.utils.data import DataLoader, Dataset
+from bert import BertModel
 from tqdm import tqdm
 import numpy as np
 import json
@@ -12,6 +11,7 @@ from torch import nn
 from scipy.stats import spearmanr
 from datasets import SentencePairDataset
 import csv
+from tokenizer import BertTokenizer
 
 BERT_HIDDEN_SIZE = 768
 TQDM_DISABLE = False
@@ -61,18 +61,18 @@ def load_sts_data(sts_filename, split="train"):
     return sts_data
 
 class SimCSEBERT(torch.nn.Module):
-    """Simplified BERT model for SimCSE training"""
+    """Simplified BERT model for SimCSE training - compatible with your tokenization"""
     def __init__(self, model_name="bert-base-uncased"):
         super().__init__()
         self.bert = BertModel.from_pretrained(model_name)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # No need for separate tokenizer - it's handled by the dataset
     
     def forward(self, input_ids, attention_mask):
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         if isinstance(outputs, dict):
-                return outputs["last_hidden_state"][:, 0, :]
+            return outputs["last_hidden_state"][:, 0, :]  # [CLS] token
         else:
-            return outputs.last_hidden_state[:, 0, :]
+            return outputs.last_hidden_state[:, 0, :]  # [CLS] token
     
     def simcse_loss(self, emb1, emb2, temperature=0.05):
         """SimCSE contrastive loss"""
@@ -111,15 +111,15 @@ class STSEvaluator:
         
         return logits
 
-class ContrastiveSNLIDataset(torch.utils.data.Dataset):
+class ContrastiveSNLIDataset(Dataset):
     """Dataset that uses SNLI sentences for contrastive learning"""
-    def __init__(self, file_path, tokenizer, max_length=128, sample_size=None):
-        self.tokenizer = tokenizer
-        self.max_length = max_length
-        self.sentences = self._load_sentences(file_path, sample_size)
-        
+    def __init__(self, file_path, args, sample_size=None):
+        self.dataset = self._load_sentences(file_path, sample_size)
+        self.p = args
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+
     def _load_sentences(self, file_path, sample_size):
-        """Extract all unique sentences from SNLI"""
+        """Extract all unique sentences from SNLI and format for compatibility"""
         sentences = set()
         print(f"Loading sentences from SNLI data at {file_path}...")
         
@@ -140,28 +140,42 @@ class ContrastiveSNLIDataset(torch.utils.data.Dataset):
             print(f"Error loading SNLI data: {e}")
             return []
         
-        sentences = list(sentences)
-        print(f"Loaded {len(sentences)} unique sentences")
-        return sentences
+        # Format: (sentence, dummy_label, dummy_sent_id) for compatibility
+        formatted_data = [(sentence, 0, f"snli_{i}") for i, sentence in enumerate(sentences)]
+        print(f"Loaded {len(formatted_data)} unique sentences")
+        return formatted_data
     
     def __len__(self):
-        return len(self.sentences)
+        return len(self.dataset)
     
     def __getitem__(self, idx):
-        sentence = self.sentences[idx]
-        # Tokenize the same sentence (will be passed twice with different dropout)
-        tokens = self.tokenizer(
-            sentence,
-            truncation=True,
-            padding='max_length',
-            max_length=self.max_length,
-            return_tensors='pt'
-        )
-        
-        return {
-            'input_ids': tokens['input_ids'].squeeze(),
-            'attention_mask': tokens['attention_mask'].squeeze(),
+        return self.dataset[idx]
+    
+    def pad_data(self, data):
+        """Use the same tokenization approach as SentenceClassificationDataset"""
+        sents = [x[0] for x in data]
+        labels = [x[1] for x in data]  # Dummy labels
+        sent_ids = [x[2] for x in data]  # Dummy sent_ids
+
+        encoding = self.tokenizer(sents, return_tensors="pt", padding=True, truncation=True)
+        token_ids = torch.LongTensor(encoding["input_ids"])
+        attention_mask = torch.LongTensor(encoding["attention_mask"])
+        labels = torch.LongTensor(labels)
+
+        return token_ids, attention_mask, labels, sents, sent_ids
+
+    def collate_fn(self, all_data):
+        token_ids, attention_mask, labels, sents, sent_ids = self.pad_data(all_data)
+
+        batched_data = {
+            "token_ids": token_ids,
+            "attention_mask": attention_mask,
+            "labels": labels,
+            "sents": sents,
+            "sent_ids": sent_ids,
         }
+
+        return batched_data
 
 def evaluate_sts_spearman(evaluator, sts_dataloader, device):
         """Use your exact evaluation code format with STSEvaluator"""
@@ -200,9 +214,8 @@ def evaluate_sts_spearman(evaluator, sts_dataloader, device):
         return spearman_corr
 
 def train_simcse(args):
-    # Initialize model and tokenizer
+    # Initialize model
     model = SimCSEBERT()
-    tokenizer = model.tokenizer
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
@@ -210,7 +223,7 @@ def train_simcse(args):
     train_file = "data/snli_1.0_train.jsonl"
     train_dataset = ContrastiveSNLIDataset(
         file_path=train_file,
-        tokenizer=tokenizer,
+        args=args,
         sample_size=args.subset_size if args.small_subset else None
     )
     
@@ -218,9 +231,9 @@ def train_simcse(args):
         print("No training data available. Exiting.")
         return None, -1
     
-    # Load STS dev data
+    # Load STS dev data using your original SentencePairDataset
     sts_dev_data = load_sts_data("data/sts-similarity-dev.csv", split="dev")
-    sts_dev_dataset = SentencePairDataset(sts_dev_data, args)
+    sts_dev_dataset = SentencePairDataset(sts_dev_data, args, isRegression=True)
     sts_dev_dataloader = DataLoader(
         sts_dev_dataset,
         shuffle=False,
@@ -228,60 +241,43 @@ def train_simcse(args):
         collate_fn=sts_dev_dataset.collate_fn
     )
 
-    dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    # Use the dataset's collate_fn for proper tokenization
+    dataloader = DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=True,
+        collate_fn=train_dataset.collate_fn
+    )
+    
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     evaluator = STSEvaluator(model).to(device)
     
     best_sts_corr = -1
     best_model_state = None
     
-    # Training loop - FIXED
+    # Training loop
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.epochs}")
         
-        # Training loop - FIXED
-        for epoch in range(args.epochs):
-            model.train()
-            total_loss = 0
-            progress_bar = tqdm(enumerate(dataloader), desc=f"Epoch {epoch+1}/{args.epochs}", total=len(dataloader))
+        for batch in progress_bar:
+            input_ids = batch['token_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
             
-            for i, batch in progress_bar:  # Added enumerate here
-                input_ids = batch['input_ids'].to(device)
-                attention_mask = batch['attention_mask'].to(device)
-                
-                optimizer.zero_grad()
-                
-                # CRITICAL: Pass the SAME batch through TWICE with different dropout
-                emb1 = model(input_ids, attention_mask)  # First pass
-                emb2 = model(input_ids, attention_mask)  # Second pass (different dropout)
-
-                # Add this after the first few batches to check if contrastive learning is working
-                if epoch == 0 and i == 0:  # First batch of first epoch
-                    with torch.no_grad():
-                        # Check cosine similarity between positive pairs
-                        cosine_sim = F.cosine_similarity(emb1, emb2)
-                        print(f"Debug - Positive pair similarity range: {cosine_sim.min():.3f} to {cosine_sim.max():.3f}")
-                        print(f"Debug - Average positive similarity: {cosine_sim.mean():.3f}")
-                        
-                        # Check embedding norms
-                        print(f"Debug - Embedding norms: {torch.norm(emb1, dim=1).mean():.3f}")
-
-                        # Also check the loss components to understand what's happening
-                        emb1_norm = F.normalize(emb1, dim=1)
-                        emb2_norm = F.normalize(emb2, dim=1)
-                        sim_matrix = torch.matmul(emb1_norm, emb2_norm.T) / args.temperature
-                        print(f"Debug - Similarity matrix range: {sim_matrix.min():.3f} to {sim_matrix.max():.3f}")
-                
-                # Use the correct contrastive loss
-                loss = model.simcse_loss(emb1, emb2, temperature=args.temperature)
-                
-                loss.backward()
-                optimizer.step()
-                
-                total_loss += loss.item()
-                progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
+            optimizer.zero_grad()
+            
+            # Pass the same batch through twice with different dropout
+            emb1 = model(input_ids, attention_mask)  # First pass
+            emb2 = model(input_ids, attention_mask)  # Second pass (different dropout)
+            
+            loss = model.simcse_loss(emb1, emb2, temperature=args.temperature)
+            
+            loss.backward()
+            optimizer.step()
+            
+            total_loss += loss.item()
+            progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
         
         avg_loss = total_loss / len(dataloader)
         print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
@@ -294,11 +290,11 @@ def train_simcse(args):
             best_sts_corr = sts_corr
             best_model_state = model.state_dict().copy()
             torch.save(best_model_state, f"models/simcse_nli/best_model_epoch{epoch+1}_corr{sts_corr:.4f}.pt")
-            print(f"New best model saved and Spearman: {sts_corr:.4f}")
+            print(f"New best model saved with Spearman: {sts_corr:.4f}")
     
     # Final evaluation
     dev_corr = evaluate_sts_spearman(evaluator, sts_dev_dataloader, device)
-    print(f"Dev STS Spearman Correlation: {dev_corr:.4f}")
+    print(f"Final Dev STS Spearman Correlation: {dev_corr:.4f}")
     
     torch.save(model.state_dict(), "models/simcse_nli/final_model.pt")
     print("Final model saved.")
@@ -313,6 +309,7 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", type=float, default=0.05)
     parser.add_argument("--small_subset", action="store_true", help="Use small subset for testing")
     parser.add_argument("--subset_size", type=int, default=20_000, help="Size of subset for hyperparameter tuning")
+    parser.add_argument("--local_files_only", action="store_true", help="Use only local model files")
     args = parser.parse_args()
     
     # Create directories if they don't exist
