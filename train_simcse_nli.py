@@ -487,12 +487,15 @@ if __name__ == "__main__":
     parser.add_argument("--dropout_prob", type=float, default=0.1)
     parser.add_argument("--small_subset", action="store_true")
     parser.add_argument("--subset_size", type=int, default=20_000)
-    parser.add_argument("--supervised", action="store_true", help="Use supervised SimCSE")  # New flag
+    parser.add_argument("--supervised", action="store_true", help="Use supervised SimCSE")
+    parser.add_argument("--local_files_only", action="store_true", help="Use only local model files")
     args = parser.parse_args()
     
+    # Create directories
     os.makedirs("models/simcse_supervised", exist_ok=True)
+    os.makedirs("data", exist_ok=True)
     
-    if args.supervised:
+    if getattr(args, 'supervised', False):
         train_supervised_simcse(args)
     else:
         train_simcse(args)
