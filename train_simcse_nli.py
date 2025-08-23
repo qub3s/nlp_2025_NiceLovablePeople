@@ -472,7 +472,7 @@ def train_supervised_simcse(args):
             
             # Use supervised loss with hard negatives
             loss = model.supervised_simcse_loss(
-                emb_p, emb_pos, emb_neg, has_negative, temperature=args.temperature
+                emb_p, emb_pos, emb_neg, temperature=args.temperature
             )
             
             loss.backward()
