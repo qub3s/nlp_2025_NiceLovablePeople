@@ -559,7 +559,6 @@ def train_multitask(args):
                 num_batches += 1
 
         # STS training
-        count = 0
         if args.task == "sts" or args.task == "multitask":
             
             # Standard
@@ -615,10 +614,6 @@ def train_multitask(args):
 
                     train_loss += loss.item()
                     num_batches += 1
-                    count += 1
-
-                    if count == 10:
-                        break
             
             # SimCSE
             elif config.sts_training_type == "simcse":
@@ -754,7 +749,6 @@ def train_multitask(args):
         train_loss = train_loss / num_batches
 
         # Evaluation on dev set
-        count = 0
         if config.sts_training_type == "standard":
             if args.task == "sts" or args.task == "multitask":
                 for batch in tqdm(sts_dev_dataloader):
@@ -786,10 +780,6 @@ def train_multitask(args):
                     loss = F.mse_loss(predictions, b_labels.view(-1))
                     dev_loss += loss.item()
                     dev_num_batches += 1
-
-                    count += 1
-                    if count == 10:
-                        break
             
         
         elif config.sts_training_type == "simcse":
