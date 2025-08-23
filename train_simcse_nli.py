@@ -393,11 +393,12 @@ def train_simcse(args):
         shuffle=True,
         collate_fn=train_dataset.collate_fn
     )
-    
+    accumulation_steps = 2  # 32 * 2 = 64 batch size equivalent
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     
     best_sts_corr = -1
     best_model_state = None
+    i = 0
     
     # Training loop
     for epoch in range(args.epochs):
@@ -416,9 +417,14 @@ def train_simcse(args):
             emb2 = model(input_ids, attention_mask)
             
             loss = model.simcse_loss(emb1, emb2, temperature=args.temperature)
-            
+            loss = loss / accumulation_steps
             loss.backward()
-            optimizer.step()
+
+            if (i + 1) % accumulation_steps == 0:
+                optimizer.step()
+                optimizer.zero_grad()
+                
+            i += 1
             
             total_loss += loss.item()
             progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})

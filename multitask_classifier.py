@@ -613,6 +613,7 @@ def train_multitask(args):
                     train_loss += loss.item()
                     num_batches += 1
 
+            # Combined SimCSE + SBERT
             elif config.sts_training_type == "simcse_sbert":
 
                 for batch in tqdm(
