@@ -131,20 +131,38 @@ class SimCSEBERT(torch.nn.Module):
         return loss
 
 class ContrastiveSNLIDataset(Dataset):
-    """Dataset that uses SNLI sentences for contrastive learning"""
-    def __init__(self, file_path, args, sample_size=None):
-        self.dataset = self._load_sentences(file_path, sample_size)
+    """Dataset that uses SNLI and MNLI sentences for contrastive learning"""
+    def __init__(self, snli_path, mnli_path, args, sample_size=None):
+        self.dataset = self._load_sentences(snli_path, mnli_path, sample_size)
         self.p = args
         self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
-    def _load_sentences(self, file_path, sample_size):
-        """Extract all unique sentences from SNLI and format for compatibility"""
+    def _load_sentences(self, snli_path, mnli_path, sample_size):
+        """Extract all unique sentences from both SNLI and MNLI"""
         sentences = set()
-        print(f"Loading sentences from SNLI data at {file_path}...")
+        
+        # Load from SNLI
+        if snli_path and os.path.exists(snli_path):
+            print(f"Loading sentences from SNLI data at {snli_path}...")
+            sentences.update(self._load_single_dataset(snli_path, sample_size, "snli"))
+        
+        # Load from MNLI
+        if mnli_path and os.path.exists(mnli_path):
+            print(f"Loading sentences from MNLI data at {mnli_path}...")
+            sentences.update(self._load_single_dataset(mnli_path, sample_size, "mnli"))
+        
+        # Format: (sentence, dummy_label, dummy_sent_id) for compatibility
+        formatted_data = [(sentence, 0, f"nli_{i}") for i, sentence in enumerate(sentences)]
+        print(f"Loaded {len(formatted_data)} unique sentences from both datasets")
+        return formatted_data
+    
+    def _load_single_dataset(self, file_path, sample_size, dataset_name):
+        """Load sentences from a single NLI dataset"""
+        sentences = set()
         
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                for line in tqdm(f, desc="Reading lines"):
+                for line in tqdm(f, desc=f"Reading {dataset_name} lines"):
                     item = json.loads(line)
                     
                     # Add both premise and hypothesis
@@ -156,13 +174,9 @@ class ContrastiveSNLIDataset(Dataset):
                     if sample_size and len(sentences) >= sample_size:
                         break
         except Exception as e:
-            print(f"Error loading SNLI data: {e}")
-            return []
+            print(f"Error loading {dataset_name} data: {e}")
         
-        # Format: (sentence, dummy_label, dummy_sent_id) for compatibility
-        formatted_data = [(sentence, 0, f"snli_{i}") for i, sentence in enumerate(sentences)]
-        print(f"Loaded {len(formatted_data)} unique sentences")
-        return formatted_data
+        return sentences
     
     def __len__(self):
         return len(self.dataset)
@@ -347,10 +361,13 @@ def train_simcse(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    # Load sentences for contrastive learning
-    train_file = "data/snli_1.0_train.jsonl"
+    # Load sentences from both SNLI and MNLI for contrastive learning
+    snli_file = "data/snli_1.0_train.jsonl"
+    mnli_file = "data/multinli_0.9_train.jsonl"
+    
     train_dataset = ContrastiveSNLIDataset(
-        file_path=train_file,
+        snli_path=snli_file,
+        mnli_path=mnli_file,
         args=args,
         sample_size=args.subset_size if args.small_subset else None
     )
@@ -548,6 +565,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # Create directories
+    os.makedirs("models/simcse_nli", exist_ok=True)
     os.makedirs("models/simcse_supervised", exist_ok=True)
     os.makedirs("data", exist_ok=True)
     
