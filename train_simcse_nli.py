@@ -99,34 +99,28 @@ class SimCSEBERT(torch.nn.Module):
         
         return (loss1 + loss2) / 2
     
-    def supervised_simcse_loss(self, emb1, emb2, labels, temperature=0.05):
-        """Supervised SimCSE loss with hard negatives"""
-        batch_size = emb1.size(0)
-        emb1 = F.normalize(emb1, dim=1)
-        emb2 = F.normalize(emb2, dim=1)
-        
-        # Similarity matrix
-        sim_matrix = torch.matmul(emb1, emb2.T) / temperature
-        
-        # Create mask for positive pairs (diagonal for entailment pairs)
-        # Since we have mixed batch of positives and negatives, we need to handle labels
-        pos_mask = labels.unsqueeze(1)  # Positives have label 1
-        
-        # For positive pairs, we want to maximize similarity
-        # For negative pairs, we want to minimize similarity
-        
-        pos_sim = sim_matrix * pos_mask.float()
-        neg_sim = sim_matrix * (1 - pos_mask.float())
-        
-        # Contrastive loss
-        pos_loss = -torch.log(torch.exp(pos_sim) / torch.exp(sim_matrix).sum(dim=1, keepdim=True))
-        neg_loss = -torch.log(1 - torch.exp(neg_sim) / torch.exp(sim_matrix).sum(dim=1, keepdim=True))
-        
-        # Only consider non-zero elements
-        pos_loss = pos_loss[pos_mask.bool()].mean() if pos_mask.sum() > 0 else 0
-        neg_loss = neg_loss[(1 - pos_mask).bool()].mean() if (1 - pos_mask).sum() > 0 else 0
-        
-        return pos_loss + neg_loss
+    def supervised_simcse_loss(self, emb_p, emb_pos, emb_neg, temperature=0.05):
+        batch_size = emb_p.size(0)
+        emb_p = F.normalize(emb_p, dim=1)
+        emb_pos = F.normalize(emb_pos, dim=1)
+        emb_neg = F.normalize(emb_neg, dim=1)
+
+        # Positive similarity
+        pos_sim = torch.sum(emb_p * emb_pos, dim=1) / temperature  # [batch_size]
+
+        # Negative similarities (in-batch + hard negatives)
+        neg_sim = torch.matmul(emb_p, emb_pos.T) / temperature  # [batch_size, batch_size]
+        hard_neg_sim = torch.sum(emb_p * emb_neg, dim=1) / temperature  # [batch_size]
+
+        # Combine: for each row i, add hard_neg_sim[i] to neg_sim[i, i]
+        neg_sim[range(batch_size), range(batch_size)] += hard_neg_sim
+
+        # Logits: positive is the diagonal
+        logits = torch.cat([pos_sim.unsqueeze(1), neg_sim], dim=1)  # [batch_size, batch_size+1]
+        labels = torch.zeros(batch_size, dtype=torch.long).to(emb_p.device)
+
+        loss = F.cross_entropy(logits, labels)
+        return loss
 
 class ContrastiveSNLIDataset(Dataset):
     """Dataset that uses SNLI sentences for contrastive learning"""
@@ -195,84 +189,107 @@ class ContrastiveSNLIDataset(Dataset):
         return batched_data
 
 class SupervisedNLIDataset(Dataset):
-    """Dataset for supervised SimCSE using NLI data"""
+    """Dataset for supervised SimCSE using NLI data with hard negatives"""
     def __init__(self, file_path, args, sample_size=None):
-        self.entailment_pairs = []  # Positive pairs
-        self.contradiction_pairs = []  # Hard negatives
+        self.pairs = []  # (premise, positive, negative) tuples
         self._load_nli_pairs(file_path, sample_size)
         self.p = args
         self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-        
-        # Combine all data
-        self.all_data = self.entailment_pairs + self.contradiction_pairs
 
     def _load_nli_pairs(self, file_path, sample_size):
         print(f"Loading NLI pairs from {file_path}...")
+        
+        # We need to group by premise to find contradiction pairs
+        premise_dict = {}  # premise -> {'entailment': [], 'contradiction': []}
         
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 for line in tqdm(f, desc="Reading NLI lines"):
                     item = json.loads(line)
                     
-                    # Only use entailment and contradiction
-                    if item['gold_label'] == 'entailment':
-                        self.entailment_pairs.append((
-                            item['sentence1'], 
-                            item['sentence2'], 
-                            1,  # label: positive
-                            f"ent_{len(self.entailment_pairs)}"
-                        ))
-                    elif item['gold_label'] == 'contradiction':
-                        self.contradiction_pairs.append((
-                            item['sentence1'],
-                            item['sentence2'], 
-                            0,  # label: negative
-                            f"contra_{len(self.contradiction_pairs)}"
-                        ))
+                    premise = item['sentence1']
+                    hypothesis = item['sentence2']
+                    label = item['gold_label']
                     
-                    if sample_size and len(self.entailment_pairs) >= sample_size // 2:
+                    if premise not in premise_dict:
+                        premise_dict[premise] = {'entailment': [], 'contradiction': []}
+                    
+                    if label in ['entailment', 'contradiction']:
+                        premise_dict[premise][label].append(hypothesis)
+                    
+                    if sample_size and len(premise_dict) >= sample_size:
                         break
                         
         except Exception as e:
             print(f"Error loading NLI data: {e}")
+            return
         
-        print(f"Loaded {len(self.entailment_pairs)} entailment pairs and {len(self.contradiction_pairs)} contradiction pairs")
+        # Create positive-negative pairs
+        for premise, hypotheses in premise_dict.items():
+            entailments = hypotheses['entailment']
+            contradictions = hypotheses['contradiction']
+            
+            # For each entailment, use one contradiction as hard negative
+            for entailment in entailments:
+                if contradictions:  # If we have contradiction pairs
+                    # Use the first contradiction as hard negative
+                    contradiction = contradictions[0]
+                    self.pairs.append((premise, entailment, contradiction))
+                else:
+                    # Fallback: just positive pair without hard negative
+                    self.pairs.append((premise, entailment, None))
+        
+        print(f"Loaded {len(self.pairs)} supervised training pairs")
 
     def __len__(self):
-        return len(self.all_data)
+        return len(self.pairs)
     
     def __getitem__(self, idx):
-        return self.all_data[idx]
+        premise, positive, negative = self.pairs[idx]
+        return premise, positive, negative, f"pair_{idx}"
     
     def pad_data(self, data):
-        sents1 = [x[0] for x in data]
-        sents2 = [x[1] for x in data]
-        labels = [x[2] for x in data]
+        premises = [x[0] for x in data]
+        positives = [x[1] for x in data]
+        negatives = [x[2] for x in data]
         sent_ids = [x[3] for x in data]
 
-        # Tokenize both sentences
-        encoding1 = self.tokenizer(sents1, return_tensors="pt", padding=True, truncation=True)
-        encoding2 = self.tokenizer(sents2, return_tensors="pt", padding=True, truncation=True)
+        # Tokenize all sentences
+        encoding_premise = self.tokenizer(premises, return_tensors="pt", padding=True, truncation=True)
+        encoding_positive = self.tokenizer(positives, return_tensors="pt", padding=True, truncation=True)
         
-        token_ids1 = torch.LongTensor(encoding1["input_ids"])
-        attention_mask1 = torch.LongTensor(encoding1["attention_mask"])
-        token_ids2 = torch.LongTensor(encoding2["input_ids"])
-        attention_mask2 = torch.LongTensor(encoding2["attention_mask"])
-        labels = torch.LongTensor(labels)
+        token_ids_p = torch.LongTensor(encoding_premise["input_ids"])
+        attention_mask_p = torch.LongTensor(encoding_premise["attention_mask"])
+        token_ids_pos = torch.LongTensor(encoding_positive["input_ids"])
+        attention_mask_pos = torch.LongTensor(encoding_positive["attention_mask"])
+        
+        # Handle negatives (some might be None)
+        negative_sents = [neg if neg is not None else "" for neg in negatives]
+        encoding_negative = self.tokenizer(negative_sents, return_tensors="pt", padding=True, truncation=True)
+        token_ids_neg = torch.LongTensor(encoding_negative["input_ids"])
+        attention_mask_neg = torch.LongTensor(encoding_negative["attention_mask"])
+        
+        has_negative = torch.tensor([1 if neg is not None else 0 for neg in negatives])
 
-        return token_ids1, attention_mask1, token_ids2, attention_mask2, labels, sents1, sents2, sent_ids
+        return (token_ids_p, attention_mask_p, 
+                token_ids_pos, attention_mask_pos,
+                token_ids_neg, attention_mask_neg,
+                has_negative, sent_ids)
 
     def collate_fn(self, all_data):
-        token_ids1, attention_mask1, token_ids2, attention_mask2, labels, sents1, sents2, sent_ids = self.pad_data(all_data)
+        (token_ids_p, attention_mask_p, 
+         token_ids_pos, attention_mask_pos,
+         token_ids_neg, attention_mask_neg,
+         has_negative, sent_ids) = self.pad_data(all_data)
 
         batched_data = {
-            "token_ids_1": token_ids1,
-            "attention_mask_1": attention_mask1,
-            "token_ids_2": token_ids2,
-            "attention_mask_2": attention_mask2,
-            "labels": labels,
-            "sents_1": sents1,
-            "sents_2": sents2,
+            "token_ids_p": token_ids_p,
+            "attention_mask_p": attention_mask_p,
+            "token_ids_pos": token_ids_pos,
+            "attention_mask_pos": attention_mask_pos,
+            "token_ids_neg": token_ids_neg,
+            "attention_mask_neg": attention_mask_neg,
+            "has_negative": has_negative,
             "sent_ids": sent_ids,
         }
 
@@ -402,7 +419,7 @@ def train_supervised_simcse(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    # Load supervised NLI data
+    # Load supervised NLI data with hard negatives
     train_file = "data/snli_1.0_train.jsonl"
     train_dataset = SupervisedNLIDataset(
         file_path=train_file,
@@ -438,20 +455,25 @@ def train_supervised_simcse(args):
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.epochs}")
         
         for batch in progress_bar:
-            input_ids1 = batch['token_ids_1'].to(device)
-            attention_mask1 = batch['attention_mask_1'].to(device)
-            input_ids2 = batch['token_ids_2'].to(device)
-            attention_mask2 = batch['attention_mask_2'].to(device)
-            labels = batch['labels'].to(device)
+            input_ids_p = batch['token_ids_p'].to(device)
+            attention_mask_p = batch['attention_mask_p'].to(device)
+            input_ids_pos = batch['token_ids_pos'].to(device)
+            attention_mask_pos = batch['attention_mask_pos'].to(device)
+            input_ids_neg = batch['token_ids_neg'].to(device)
+            attention_mask_neg = batch['attention_mask_neg'].to(device)
+            has_negative = batch['has_negative'].to(device)
             
             optimizer.zero_grad()
             
-            # Get embeddings for both sentences
-            emb1 = model(input_ids1, attention_mask1)
-            emb2 = model(input_ids2, attention_mask2)
+            # Get embeddings for premise, positive, and negative
+            emb_p = model(input_ids_p, attention_mask_p)
+            emb_pos = model(input_ids_pos, attention_mask_pos)
+            emb_neg = model(input_ids_neg, attention_mask_neg) if torch.any(has_negative) else None
             
-            # Use supervised loss
-            loss = model.supervised_simcse_loss(emb1, emb2, labels, temperature=args.temperature)
+            # Use supervised loss with hard negatives
+            loss = model.supervised_simcse_loss(
+                emb_p, emb_pos, emb_neg, has_negative, temperature=args.temperature
+            )
             
             loss.backward()
             optimizer.step()
