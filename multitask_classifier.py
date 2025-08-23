@@ -60,11 +60,15 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         # Load pre-tuned SimCSE model or base BERT
         if config.use_pretrained_simcse:
-            # Load your saved SimCSE model
+            # Load the state dictionary directly
+            state_dict = torch.load(config.simcse_model_path, map_location='cpu')
+            # Initialize with base BERT first
             self.bert = BertModel.from_pretrained(
-                config.simcse_model_path,
+                "bert-base-uncased",
                 local_files_only=config.local_files_only
             )
+            # Then load the pretrained weights
+            self.bert.load_state_dict(state_dict['model'])
         else:
             self.bert = BertModel.from_pretrained(
                 "bert-base-uncased",
