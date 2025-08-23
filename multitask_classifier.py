@@ -58,6 +58,9 @@ class MultitaskBERT(nn.Module):
 
     def __init__(self, config):
         super(MultitaskBERT, self).__init__()
+
+        self.config = config
+
         # Load pre-tuned SimCSE model or base BERT
         if config.use_pretrained_simcse:
             print(f"Loading pretrained SimCSE model from: {config.simcse_model_path}")
@@ -97,8 +100,7 @@ class MultitaskBERT(nn.Module):
                 "bert-base-uncased",
                 local_files_only=config.local_files_only
             )
-            self.config = config
-
+        
         # Freeze BERT parameters in pretrain mode
         for param in self.bert.parameters():
             if config.option == "pretrain":
