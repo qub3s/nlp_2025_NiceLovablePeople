@@ -60,22 +60,44 @@ class MultitaskBERT(nn.Module):
         super(MultitaskBERT, self).__init__()
         # Load pre-tuned SimCSE model or base BERT
         if config.use_pretrained_simcse:
-            # Load the state dictionary directly
+            print(f"Loading pretrained SimCSE model from: {config.simcse_model_path}")
+            
+            # Load the state dictionary
             state_dict = torch.load(config.simcse_model_path, map_location='cpu')
-            # Initialize with base BERT first
+            
+            # Show model structure
+            print(f"Model contains {len(state_dict)} parameters")
+            bert_keys = [k for k in state_dict.keys() if k.startswith('bert.')]
+            print(f"Found {len(bert_keys)} BERT parameters")
+            
+            # Initialize with base BERT
             self.bert = BertModel.from_pretrained(
                 "bert-base-uncased",
                 local_files_only=config.local_files_only
             )
-            # Then load the pretrained weights
-            self.bert.load_state_dict(state_dict['model'])
+            
+            # Extract BERT weights
+            bert_state_dict = {}
+            for key, value in state_dict.items():
+                if key.startswith('bert.'):
+                    new_key = key[5:]  # Remove 'bert.' prefix
+                    bert_state_dict[new_key] = value
+            
+            # Load the BERT weights
+            if bert_state_dict:
+                missing_keys, unexpected_keys = self.bert.load_state_dict(bert_state_dict, strict=False)
+                print(f"Successfully loaded BERT weights")
+                print(f"Missing keys: {len(missing_keys)}")
+                print(f"Unexpected keys: {len(unexpected_keys)}")
+            else:
+                print("Warning: No BERT weights found in SimCSE model. Using base BERT.")
+                
         else:
             self.bert = BertModel.from_pretrained(
                 "bert-base-uncased",
                 local_files_only=config.local_files_only
             )
-
-        self.config = config
+            self.config = config
 
         # Freeze BERT parameters in pretrain mode
         for param in self.bert.parameters():
