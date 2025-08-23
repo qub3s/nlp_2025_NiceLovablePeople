@@ -252,7 +252,7 @@ class SupervisedNLIDataset(Dataset):
         return len(self.pairs)
     
     def __getitem__(self, idx):
-        premise, positive, negative = self.pairs[idx]
+        premise, positive, negative, dataset_name = self.pairs[idx]
         return premise, positive, negative, f"pair_{idx}"
     
     def pad_data(self, data):
