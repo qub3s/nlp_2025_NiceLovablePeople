@@ -471,7 +471,7 @@ def train_supervised_simcse(args):
         model.train()
         total_loss = 0
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.epochs}")
-        
+        i = 0
         for batch in progress_bar:
             input_ids_p = batch['token_ids_p'].to(device)
             attention_mask_p = batch['attention_mask_p'].to(device)
@@ -501,6 +501,8 @@ def train_supervised_simcse(args):
             if (i + 1) % accumulation_steps == 0:
                 optimizer.step()
                 optimizer.zero_grad()
+
+            i += 1
             
             total_loss += loss.item() * accumulation_steps
             progress_bar.set_postfix({"loss": f"{loss.item() * accumulation_steps:.4f}"})
