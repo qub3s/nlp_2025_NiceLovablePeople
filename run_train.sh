@@ -38,15 +38,20 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # STS
 echo -e "\nStarting STS\n"
+### Fine-Tune ###
+python -u train.py --task sts --option finetune --sts_training_type sbert --forward_type sbert_mean --use_pretrained_simcse 
+--simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.7210.pt" --epochs 10 --lr 2e-5 --batch_size 32 --use_gpu
+
 #python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type simple --forward_type pooler --hidden_dropout_prob 0.25 --epochs=10
 #python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type complex --forward_type pooler --hidden_dropout_prob 0.25 --epochs=10
 #python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type simple --forward_type raw_cls --hidden_dropout_prob 0.25 --epochs=10
 #python -u multitask_classifier.py --use_gpu --option finetune --task sts --regressor_type complex --forward_type raw_cls --hidden_dropout_prob 0.25 --epochs=10
 
+### Pre Fine-Tune with SimCSE ###
 #python train_simcse_nli.py --supervised --epochs 3 --batch_size 64 --lr 3e-5
 #python -u train_simcse_nli.py --epochs 1 --batch_size 64 --lr 3e-5
 #python -u train_simcse_nli.py --epochs 2 --batch_size 8 --lr 3e-5 --small_subset --subset_size 500
-python train_simcse_nli.py --supervised --epochs 2 --batch_size 8 --lr 3e-5 --small_subset --subset_size 500
+#python train_simcse_nli.py --supervised --epochs 2 --batch_size 8 --lr 3e-5 --small_subset --subset_size 500
 
 
 # QQP

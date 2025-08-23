@@ -58,9 +58,18 @@ class MultitaskBERT(nn.Module):
 
     def __init__(self, config):
         super(MultitaskBERT, self).__init__()
-        self.bert = BertModel.from_pretrained(
-            "bert-base-uncased", local_files_only=config.local_files_only
-        )
+        # Load pre-tuned SimCSE model or base BERT
+        if config.use_pretrained_simcse:
+            # Load your saved SimCSE model
+            self.bert = BertModel.from_pretrained(
+                config.simcse_model_path,
+                local_files_only=config.local_files_only
+            )
+        else:
+            self.bert = BertModel.from_pretrained(
+                "bert-base-uncased",
+                local_files_only=config.local_files_only
+            )
 
         self.config = config
 
@@ -441,6 +450,8 @@ def train_multitask(args):
         "regressor_type": args.regressor_type,
         "forward_type": args.forward_type,
         "sts_training_type": args.sts_training_type,
+        "use_pretrained_simcse": args.use_pretrained_simcse,
+        "simcse_model_path": args.simcse_model_path,
     }
     config = SimpleNamespace(**config)
 
@@ -878,6 +889,13 @@ def test_model(args):
 
 def get_args():
     parser = argparse.ArgumentParser()
+
+    # Which model to load
+    parser.add_argument("--use_pretrained_simcse", action="store_true", 
+                       help="Use pre-trained SimCSE model instead of base BERT")
+    parser.add_argument("--simcse_model_path", type=str, default="models/simcse_supervised/best_model_epoch3_corr0.7210.pt",
+                       help="Path to your pre-trained SimCSE model")
+    
     # Training task
     parser.add_argument(
         "--task",
@@ -914,7 +932,7 @@ def get_args():
         type=str,
         help="Type of forward function: pooler or raw_cls",
         choices=("pooler", "raw_cls", "sbert_mean"),
-        default="pooler",
+        default="raw_cls",
     )
 
     # NEW: Add STS training type argument
@@ -922,7 +940,7 @@ def get_args():
         "--sts_training_type",
         type=str,
         help="Type of STS training",
-        choices=("standard", "sbert", "simcse", "sbert_simcse"),
+        choices=("standard", "sbert", "simcse", "simcse_sbert"),
         default="pooler",
     )
 
