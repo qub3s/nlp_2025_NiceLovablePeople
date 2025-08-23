@@ -99,21 +99,29 @@ class SimCSEBERT(torch.nn.Module):
         
         return (loss1 + loss2) / 2
     
-    def supervised_simcse_loss(self, emb_p, emb_pos, emb_neg, temperature=0.05):
+    def supervised_simcse_loss(self, emb_p, emb_pos, emb_neg, has_negative, temperature=0.05):
         batch_size = emb_p.size(0)
         emb_p = F.normalize(emb_p, dim=1)
         emb_pos = F.normalize(emb_pos, dim=1)
-        emb_neg = F.normalize(emb_neg, dim=1)
+        
+        # Only use negative embeddings where has_negative is True
+        valid_neg_mask = has_negative.bool()
+        if torch.any(valid_neg_mask):
+            emb_neg = F.normalize(emb_neg[valid_neg_mask], dim=1)
+        else:
+            emb_neg = None
 
         # Positive similarity
         pos_sim = torch.sum(emb_p * emb_pos, dim=1) / temperature  # [batch_size]
 
-        # Negative similarities (in-batch + hard negatives)
+        # Negative similarities (in-batch)
         neg_sim = torch.matmul(emb_p, emb_pos.T) / temperature  # [batch_size, batch_size]
-        hard_neg_sim = torch.sum(emb_p * emb_neg, dim=1) / temperature  # [batch_size]
-
-        # Combine: for each row i, add hard_neg_sim[i] to neg_sim[i, i]
-        neg_sim[range(batch_size), range(batch_size)] += hard_neg_sim
+        
+        # Add hard negatives where available
+        if emb_neg is not None:
+            hard_neg_sim = torch.sum(emb_p[valid_neg_mask] * emb_neg, dim=1) / temperature  # [num_valid]
+            # Add hard negatives to the diagonal of corresponding rows
+            neg_sim[valid_neg_mask, valid_neg_mask] += hard_neg_sim
 
         # Logits: positive is the diagonal
         logits = torch.cat([pos_sim.unsqueeze(1), neg_sim], dim=1)  # [batch_size, batch_size+1]
