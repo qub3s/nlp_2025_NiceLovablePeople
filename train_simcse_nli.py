@@ -189,22 +189,28 @@ class ContrastiveSNLIDataset(Dataset):
         return batched_data
 
 class SupervisedNLIDataset(Dataset):
-    """Dataset for supervised SimCSE using NLI data with hard negatives"""
-    def __init__(self, file_path, args, sample_size=None):
+    """Dataset for supervised SimCSE using both SNLI and MNLI data with hard negatives"""
+    def __init__(self, snli_path, mnli_path, args, sample_size=None):
         self.pairs = []  # (premise, positive, negative) tuples
-        self._load_nli_pairs(file_path, sample_size)
+        self._load_nli_pairs(snli_path, "snli", sample_size)
+        self._load_nli_pairs(mnli_path, "mnli", sample_size)
         self.p = args
         self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        print(f"Total loaded {len(self.pairs)} supervised training pairs from both SNLI and MNLI")
 
-    def _load_nli_pairs(self, file_path, sample_size):
-        print(f"Loading NLI pairs from {file_path}...")
+    def _load_nli_pairs(self, file_path, dataset_name, sample_size):
+        if not os.path.exists(file_path):
+            print(f"Warning: {dataset_name} file not found at {file_path}")
+            return
+            
+        print(f"Loading {dataset_name.upper()} pairs from {file_path}...")
         
-        # We need to group by premise to find contradiction pairs
         premise_dict = {}  # premise -> {'entailment': [], 'contradiction': []}
+        pairs_count = 0
         
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                for line in tqdm(f, desc="Reading NLI lines"):
+                for line in tqdm(f, desc=f"Reading {dataset_name} lines"):
                     item = json.loads(line)
                     
                     premise = item['sentence1']
@@ -217,11 +223,12 @@ class SupervisedNLIDataset(Dataset):
                     if label in ['entailment', 'contradiction']:
                         premise_dict[premise][label].append(hypothesis)
                     
-                    if sample_size and len(premise_dict) >= sample_size:
+                    if sample_size and pairs_count >= sample_size:
                         break
+                    pairs_count += 1
                         
         except Exception as e:
-            print(f"Error loading NLI data: {e}")
+            print(f"Error loading {dataset_name} data: {e}")
             return
         
         # Create positive-negative pairs
@@ -234,12 +241,12 @@ class SupervisedNLIDataset(Dataset):
                 if contradictions:  # If we have contradiction pairs
                     # Use the first contradiction as hard negative
                     contradiction = contradictions[0]
-                    self.pairs.append((premise, entailment, contradiction))
+                    self.pairs.append((premise, entailment, contradiction, dataset_name))
                 else:
                     # Fallback: just positive pair without hard negative
-                    self.pairs.append((premise, entailment, None))
+                    self.pairs.append((premise, entailment, None, dataset_name))
         
-        print(f"Loaded {len(self.pairs)} supervised training pairs")
+        print(f"Loaded {len(premise_dict)} premises from {dataset_name}")
 
     def __len__(self):
         return len(self.pairs)
@@ -419,13 +426,20 @@ def train_supervised_simcse(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    # Load supervised NLI data with hard negatives
-    train_file = "data/snli_1.0_train.jsonl"
+    # Load both SNLI and MNLI datasets
+    snli_file = "data/snli_1.0_train.jsonl"
+    mnli_file = "data/multinli_0.9_train.jsonl"  # MNLI dataset
+    
     train_dataset = SupervisedNLIDataset(
-        file_path=train_file,
+        snli_path=snli_file,
+        mnli_path=mnli_file,
         args=args,
         sample_size=args.subset_size if args.small_subset else None
     )
+    
+    if len(train_dataset) == 0:
+        print("No training data available. Exiting.")
+        return None, -1
     
     # Load STS dev data
     sts_dev_data = load_sts_data("data/sts-similarity-dev.csv", split="dev")
@@ -449,6 +463,10 @@ def train_supervised_simcse(args):
     best_sts_corr = -1
     best_model_state = None
     
+    # Add gradient accumulation steps
+    accumulation_steps = 4  # 128 * 4 = 512 batch size equivalent
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0
@@ -465,21 +483,27 @@ def train_supervised_simcse(args):
             
             optimizer.zero_grad()
             
-            # Get embeddings for premise, positive, and negative
+            # Get embeddings
             emb_p = model(input_ids_p, attention_mask_p)
             emb_pos = model(input_ids_pos, attention_mask_pos)
             emb_neg = model(input_ids_neg, attention_mask_neg) if torch.any(has_negative) else None
             
-            # Use supervised loss with hard negatives
+            # Compute loss
             loss = model.supervised_simcse_loss(
-                emb_p, emb_pos, emb_neg, temperature=args.temperature
+                emb_p, emb_pos, emb_neg, has_negative, temperature=args.temperature
             )
             
+            # Gradient accumulation
+            loss = loss / accumulation_steps
             loss.backward()
-            optimizer.step()
             
-            total_loss += loss.item()
-            progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
+            # Only update weights after accumulation steps
+            if (i + 1) % accumulation_steps == 0:
+                optimizer.step()
+                optimizer.zero_grad()
+            
+            total_loss += loss.item() * accumulation_steps
+            progress_bar.set_postfix({"loss": f"{loss.item() * accumulation_steps:.4f}"})
         
         avg_loss = total_loss / len(dataloader)
         print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")

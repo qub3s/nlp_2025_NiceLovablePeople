@@ -2,9 +2,8 @@ import argparse
 import os
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from transformers import AutoTokenizer
-from bert import BertModel  # your existing BERT import
+from torch.utils.data import DataLoader, Dataset
+from bert import BertModel
 from tqdm import tqdm
 import numpy as np
 import json
@@ -12,9 +11,7 @@ from torch import nn
 from scipy.stats import spearmanr
 from datasets import SentencePairDataset
 import csv
-import itertools
-import json
-from datetime import datetime
+from tokenizer import BertTokenizer
 
 BERT_HIDDEN_SIZE = 768
 TQDM_DISABLE = False
@@ -64,11 +61,15 @@ def load_sts_data(sts_filename, split="train"):
     return sts_data
 
 class SimCSEBERT(torch.nn.Module):
-    """Simplified BERT model for SimCSE training"""
-    def __init__(self, model_name="bert-base-uncased"):
+    """Simplified BERT model for SimCSE training - compatible with your tokenization"""
+    def __init__(self, model_name="bert-base-uncased", dropout_prob=0.1):
         super().__init__()
         self.bert = BertModel.from_pretrained(model_name)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        for module in self.bert.modules():
+            if isinstance(module, nn.Dropout):
+                module.p = dropout_prob
+        
     
     def forward(self, input_ids, attention_mask):
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
@@ -83,162 +84,269 @@ class SimCSEBERT(torch.nn.Module):
         emb1 = F.normalize(emb1, dim=1)
         emb2 = F.normalize(emb2, dim=1)
         
-        sim_matrix = torch.matmul(emb1, emb2.T) / temperature
+        # Positive pairs are on the diagonal
+        pos_sim = (emb1 * emb2).sum(dim=1) / temperature
+        
+        # Negative similarities
+        neg_sim = torch.matmul(emb1, emb2.T) / temperature
+        
+        # Create labels: positive pairs are on the diagonal
         labels = torch.arange(batch_size).to(emb1.device)
         
-        return F.cross_entropy(sim_matrix, labels)
-
-class STSEvaluator:
-    """Uses your existing STS prediction logic"""
-    def __init__(self, simcse_model):
-        self.simcse_model = simcse_model
-        # Add your regression head for evaluation only
-        self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
-        self.sts_dropout = nn.Dropout(0.3)
+        # Cross entropy loss for both directions
+        loss1 = F.cross_entropy(neg_sim, labels)
+        loss2 = F.cross_entropy(neg_sim.T, labels)
+        
+        return (loss1 + loss2) / 2
     
-    def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
-        """Your existing STS prediction function"""
-        emb1 = self.simcse_model(input_ids_1, attention_mask_1)
-        emb2 = self.simcse_model(input_ids_2, attention_mask_2)
-        
-        features = torch.cat([emb1, emb2, torch.abs(emb1 - emb2)], dim=1)
-        features = self.sts_dropout(features)
-        logits = self.sts_regressor(features).squeeze()
-        
-        return logits
+    def supervised_simcse_loss(self, emb_p, emb_pos, emb_neg, temperature=0.05):
+        batch_size = emb_p.size(0)
+        emb_p = F.normalize(emb_p, dim=1)
+        emb_pos = F.normalize(emb_pos, dim=1)
+        emb_neg = F.normalize(emb_neg, dim=1)
 
-class SNLIDataset(torch.utils.data.Dataset):
-    """Custom dataset loader for local SNLI files"""
-    def __init__(self, file_path, tokenizer, max_length=128, sample_size=None):
-        self.tokenizer = tokenizer
-        self.max_length = max_length
-        self.data = self._load_snli_data(file_path, sample_size)
-        
-    def _load_snli_data(self, file_path, sample_size):
-        """Load SNLI data from JSONL files"""
-        data = []
-        print(f"Loading SNLI data from {file_path}...")
+        # Positive similarity
+        pos_sim = torch.sum(emb_p * emb_pos, dim=1) / temperature  # [batch_size]
+
+        # Negative similarities (in-batch + hard negatives)
+        neg_sim = torch.matmul(emb_p, emb_pos.T) / temperature  # [batch_size, batch_size]
+        hard_neg_sim = torch.sum(emb_p * emb_neg, dim=1) / temperature  # [batch_size]
+
+        # Combine: for each row i, add hard_neg_sim[i] to neg_sim[i, i]
+        neg_sim[range(batch_size), range(batch_size)] += hard_neg_sim
+
+        # Logits: positive is the diagonal
+        logits = torch.cat([pos_sim.unsqueeze(1), neg_sim], dim=1)  # [batch_size, batch_size+1]
+        labels = torch.zeros(batch_size, dtype=torch.long).to(emb_p.device)
+
+        loss = F.cross_entropy(logits, labels)
+        return loss
+
+class ContrastiveSNLIDataset(Dataset):
+    """Dataset that uses SNLI sentences for contrastive learning"""
+    def __init__(self, file_path, args, sample_size=None):
+        self.dataset = self._load_sentences(file_path, sample_size)
+        self.p = args
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+
+    def _load_sentences(self, file_path, sample_size):
+        """Extract all unique sentences from SNLI and format for compatibility"""
+        sentences = set()
+        print(f"Loading sentences from SNLI data at {file_path}...")
         
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 for line in tqdm(f, desc="Reading lines"):
                     item = json.loads(line)
                     
-                    # Skip invalid or poorly formatted examples
-                    if (item['gold_label'] not in ['entailment', 'neutral', 'contradiction'] or 
-                        not item['sentence1'] or not item['sentence2']):
-                        continue
+                    # Add both premise and hypothesis
+                    if item['sentence1']:
+                        sentences.add(item['sentence1'])
+                    if item['sentence2']:
+                        sentences.add(item['sentence2'])
                     
-                    data.append({
-                        'premise': item['sentence1'],
-                        'hypothesis': item['sentence2'], 
-                        'label': item['gold_label']
-                    })
-                    
-                    # Early stop if sampling
-                    if sample_size and len(data) >= sample_size:
+                    if sample_size and len(sentences) >= sample_size:
                         break
-        except FileNotFoundError:
-            print(f"SNLI file not found: {file_path}")
-            return []
         except Exception as e:
             print(f"Error loading SNLI data: {e}")
             return []
         
-        print(f"Loaded {len(data)} valid examples")
-        return data
+        # Format: (sentence, dummy_label, dummy_sent_id) for compatibility
+        formatted_data = [(sentence, 0, f"snli_{i}") for i, sentence in enumerate(sentences)]
+        print(f"Loaded {len(formatted_data)} unique sentences")
+        return formatted_data
     
     def __len__(self):
-        return len(self.data)
+        return len(self.dataset)
     
     def __getitem__(self, idx):
-        item = self.data[idx]
-        # Tokenization code remains the same as before
-        premise = self.tokenizer(
-            item['premise'],
-            truncation=True,
-            padding='max_length',
-            max_length=self.max_length,
-            return_tensors='pt'
-        )
-        hypothesis = self.tokenizer(
-            item['hypothesis'],
-            truncation=True,
-            padding='max_length', 
-            max_length=self.max_length,
-            return_tensors='pt'
-        )
-        
-        return {
-            'premise_ids': premise['input_ids'].squeeze(),
-            'premise_mask': premise['attention_mask'].squeeze(),
-            'hypothesis_ids': hypothesis['input_ids'].squeeze(),
-            'hypothesis_mask': hypothesis['attention_mask'].squeeze(),
-            'label': item['label']
+        return self.dataset[idx]
+    
+    def pad_data(self, data):
+        """Use the same tokenization approach as SentenceClassificationDataset"""
+        sents = [x[0] for x in data]
+        labels = [x[1] for x in data]  # Dummy labels
+        sent_ids = [x[2] for x in data]  # Dummy sent_ids
+
+        encoding = self.tokenizer(sents, return_tensors="pt", padding=True, truncation=True)
+        token_ids = torch.LongTensor(encoding["input_ids"])
+        attention_mask = torch.LongTensor(encoding["attention_mask"])
+        labels = torch.LongTensor(labels)
+
+        return token_ids, attention_mask, labels, sents, sent_ids
+
+    def collate_fn(self, all_data):
+        token_ids, attention_mask, labels, sents, sent_ids = self.pad_data(all_data)
+
+        batched_data = {
+            "token_ids": token_ids,
+            "attention_mask": attention_mask,
+            "labels": labels,
+            "sents": sents,
+            "sent_ids": sent_ids,
         }
 
-def evaluate_sts_spearman(evaluator, sts_dataloader, device):
-        """Use your exact evaluation code format with STSEvaluator"""
-        sts_y_true = []
-        sts_y_pred = []
-        sts_sent_ids = []
+        return batched_data
 
-        evaluator.simcse_model.eval()  # Set to eval mode
-        with torch.no_grad():
-            for batch in tqdm(sts_dataloader, desc="STS Eval", disable=TQDM_DISABLE):
-                (b_ids1, b_mask1, b_ids2, b_mask2, b_labels, b_sent_ids) = (
-                    batch["token_ids_1"],
-                    batch["attention_mask_1"],
-                    batch["token_ids_2"],
-                    batch["attention_mask_2"],
-                    batch["labels"],
-                    batch["sent_ids"],
-                )
+class SupervisedNLIDataset(Dataset):
+    """Dataset for supervised SimCSE using NLI data with hard negatives"""
+    def __init__(self, file_path, args, sample_size=None):
+        self.pairs = []  # (premise, positive, negative) tuples
+        self._load_nli_pairs(file_path, sample_size)
+        self.p = args
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
-                b_ids1 = b_ids1.to(device)
-                b_mask1 = b_mask1.to(device)
-                b_ids2 = b_ids2.to(device)
-                b_mask2 = b_mask2.to(device)
+    def _load_nli_pairs(self, file_path, sample_size):
+        print(f"Loading NLI pairs from {file_path}...")
+        
+        # We need to group by premise to find contradiction pairs
+        premise_dict = {}  # premise -> {'entailment': [], 'contradiction': []}
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line in tqdm(f, desc="Reading NLI lines"):
+                    item = json.loads(line)
+                    
+                    premise = item['sentence1']
+                    hypothesis = item['sentence2']
+                    label = item['gold_label']
+                    
+                    if premise not in premise_dict:
+                        premise_dict[premise] = {'entailment': [], 'contradiction': []}
+                    
+                    if label in ['entailment', 'contradiction']:
+                        premise_dict[premise][label].append(hypothesis)
+                    
+                    if sample_size and len(premise_dict) >= sample_size:
+                        break
+                        
+        except Exception as e:
+            print(f"Error loading NLI data: {e}")
+            return
+        
+        # Create positive-negative pairs
+        for premise, hypotheses in premise_dict.items():
+            entailments = hypotheses['entailment']
+            contradictions = hypotheses['contradiction']
+            
+            # For each entailment, use one contradiction as hard negative
+            for entailment in entailments:
+                if contradictions:  # If we have contradiction pairs
+                    # Use the first contradiction as hard negative
+                    contradiction = contradictions[0]
+                    self.pairs.append((premise, entailment, contradiction))
+                else:
+                    # Fallback: just positive pair without hard negative
+                    self.pairs.append((premise, entailment, None))
+        
+        print(f"Loaded {len(self.pairs)} supervised training pairs")
 
-                # Use STSEvaluator's predict_similarity
-                logits = evaluator.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                y_hat = logits.flatten().cpu().numpy()
-                b_labels = b_labels.flatten().cpu().numpy()
+    def __len__(self):
+        return len(self.pairs)
+    
+    def __getitem__(self, idx):
+        premise, positive, negative = self.pairs[idx]
+        return premise, positive, negative, f"pair_{idx}"
+    
+    def pad_data(self, data):
+        premises = [x[0] for x in data]
+        positives = [x[1] for x in data]
+        negatives = [x[2] for x in data]
+        sent_ids = [x[3] for x in data]
 
-                sts_y_pred.extend(y_hat)
-                sts_y_true.extend(b_labels)
-                sts_sent_ids.extend(b_sent_ids)
+        # Tokenize all sentences
+        encoding_premise = self.tokenizer(premises, return_tensors="pt", padding=True, truncation=True)
+        encoding_positive = self.tokenizer(positives, return_tensors="pt", padding=True, truncation=True)
+        
+        token_ids_p = torch.LongTensor(encoding_premise["input_ids"])
+        attention_mask_p = torch.LongTensor(encoding_premise["attention_mask"])
+        token_ids_pos = torch.LongTensor(encoding_positive["input_ids"])
+        attention_mask_pos = torch.LongTensor(encoding_positive["attention_mask"])
+        
+        # Handle negatives (some might be None)
+        negative_sents = [neg if neg is not None else "" for neg in negatives]
+        encoding_negative = self.tokenizer(negative_sents, return_tensors="pt", padding=True, truncation=True)
+        token_ids_neg = torch.LongTensor(encoding_negative["input_ids"])
+        attention_mask_neg = torch.LongTensor(encoding_negative["attention_mask"])
+        
+        has_negative = torch.tensor([1 if neg is not None else 0 for neg in negatives])
 
-        # Use Spearman correlation
-        spearman_corr = spearmanr(sts_y_pred, sts_y_true).correlation
-        return spearman_corr
+        return (token_ids_p, attention_mask_p, 
+                token_ids_pos, attention_mask_pos,
+                token_ids_neg, attention_mask_neg,
+                has_negative, sent_ids)
+
+    def collate_fn(self, all_data):
+        (token_ids_p, attention_mask_p, 
+         token_ids_pos, attention_mask_pos,
+         token_ids_neg, attention_mask_neg,
+         has_negative, sent_ids) = self.pad_data(all_data)
+
+        batched_data = {
+            "token_ids_p": token_ids_p,
+            "attention_mask_p": attention_mask_p,
+            "token_ids_pos": token_ids_pos,
+            "attention_mask_pos": attention_mask_pos,
+            "token_ids_neg": token_ids_neg,
+            "attention_mask_neg": attention_mask_neg,
+            "has_negative": has_negative,
+            "sent_ids": sent_ids,
+        }
+
+        return batched_data
+
+def evaluate_sts_cosine_spearman(model, sts_dataloader, device):
+    """Evaluate using cosine similarity (original SimCSE approach)"""
+    sts_y_true = []
+    sts_y_pred = []
+    
+    model.eval()
+    with torch.no_grad():
+        for batch in tqdm(sts_dataloader, desc="STS Eval", disable=TQDM_DISABLE):
+            # Get batch data
+            b_ids1 = batch["token_ids_1"].to(device)
+            b_mask1 = batch["attention_mask_1"].to(device)
+            b_ids2 = batch["token_ids_2"].to(device)
+            b_mask2 = batch["attention_mask_2"].to(device)
+            b_labels = batch["labels"].cpu().numpy()  # Human scores (0-5)
+            
+            # Get sentence embeddings
+            emb1 = model(b_ids1, b_mask1)
+            emb2 = model(b_ids2, b_mask2)
+            
+            # Normalize and compute cosine similarity (-1 to 1)
+            emb1 = F.normalize(emb1, dim=1)
+            emb2 = F.normalize(emb2, dim=1)
+            cosine_sims = torch.sum(emb1 * emb2, dim=1).cpu().numpy()
+            
+            sts_y_pred.extend(cosine_sims)
+            sts_y_true.extend(b_labels)
+    
+    # Calculate Spearman correlation between cosine sim and human scores
+    spearman_corr = spearmanr(sts_y_pred, sts_y_true).correlation
+    return spearman_corr
 
 def train_simcse(args):
-    # Initialize model and tokenizer
-    model = SimCSEBERT()
-    tokenizer = model.tokenizer
+    # Initialize model
+    model = SimCSEBERT(dropout_prob=args.dropout_prob)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    
-    # Load your local SNLI dataset
+
+    # Load sentences for contrastive learning
     train_file = "data/snli_1.0_train.jsonl"
-    train_dataset = SNLIDataset(
+    train_dataset = ContrastiveSNLIDataset(
         file_path=train_file,
-        tokenizer=tokenizer,
+        args=args,
         sample_size=args.subset_size if args.small_subset else None
     )
     
-    # Check if we have any training data
     if len(train_dataset) == 0:
         print("No training data available. Exiting.")
         return None, -1
     
-    # Load STS dev data - using our simplified function
+    # Load STS dev data using your original SentencePairDataset
     sts_dev_data = load_sts_data("data/sts-similarity-dev.csv", split="dev")
-    
-    # Create dataset and dataloader
-    args.local_files_only = False 
-    sts_dev_dataset = SentencePairDataset(sts_dev_data, args)
+    sts_dev_dataset = SentencePairDataset(sts_dev_data, args, isRegression=True)
     sts_dev_dataloader = DataLoader(
         sts_dev_dataset,
         shuffle=False,
@@ -246,13 +354,18 @@ def train_simcse(args):
         collate_fn=sts_dev_dataset.collate_fn
     )
 
-    dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    # Use the dataset's collate_fn for proper tokenization
+    dataloader = DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=True,
+        collate_fn=train_dataset.collate_fn
+    )
+    
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    evaluator = STSEvaluator(model)
     
     best_sts_corr = -1
     best_model_state = None
-    patience_counter = 0
     
     # Training loop
     for epoch in range(args.epochs):
@@ -261,19 +374,16 @@ def train_simcse(args):
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.epochs}")
         
         for batch in progress_bar:
-            premise_ids = batch['premise_ids'].to(device)
-            premise_mask = batch['premise_mask'].to(device)
-            hypothesis_ids = batch['hypothesis_ids'].to(device)
-            hypothesis_mask = batch['hypothesis_mask'].to(device)
+            input_ids = batch['token_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
             
             optimizer.zero_grad()
             
-            # Get embeddings for both sentences
-            premise_emb = model(premise_ids, premise_mask)
-            hypothesis_emb = model(hypothesis_ids, hypothesis_mask)
+            # Pass the same batch through twice with different dropout
+            emb1 = model(input_ids, attention_mask)
+            emb2 = model(input_ids, attention_mask)
             
-            # SimCSE loss
-            loss = model.simcse_loss(premise_emb, hypothesis_emb, temperature=args.temperature)
+            loss = model.simcse_loss(emb1, emb2, temperature=args.temperature)
             
             loss.backward()
             optimizer.step()
@@ -284,157 +394,111 @@ def train_simcse(args):
         avg_loss = total_loss / len(dataloader)
         print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
         
-        # Evaluate on STS after each epoch
-        sts_corr = evaluate_sts_spearman(evaluator, sts_dev_dataloader, device)
+        # Evaluate on STS after each epoch USING COSINE SIMILARITY
+        sts_corr = evaluate_sts_cosine_spearman(model, sts_dev_dataloader, device)
         print(f"Epoch {epoch+1} - STS Spearman Correlation: {sts_corr:.4f}")
         
-        # Early stopping check
-        if sts_corr > best_sts_corr + 0.001:  # Minimum improvement
+        if sts_corr > best_sts_corr:
             best_sts_corr = sts_corr
             best_model_state = model.state_dict().copy()
-            patience_counter = 0
             torch.save(best_model_state, f"models/simcse_nli/best_model_epoch{epoch+1}_corr{sts_corr:.4f}.pt")
-            print(f"New best model saved and Spearman: {sts_corr:.4f}")
-        else:
-            patience_counter += 1
-            print(f"No improvement for {patience_counter} epochs")
-            
-        # Early stopping
-        if patience_counter >= 2:  # Stop if no improvement for 2 epochs
-            print("Early stopping triggered")
-            break
+            print(f"New best model saved with Spearman: {sts_corr:.4f}")
     
-    # Load best model for final evaluation
-    if best_model_state:
-        model.load_state_dict(best_model_state)
+    # Final evaluation
+    final_corr = evaluate_sts_cosine_spearman(model, sts_dev_dataloader, device)
+    print(f"Final Dev STS Spearman Correlation: {final_corr:.4f}")
     
-    dev_corr = evaluate_sts_spearman(evaluator, sts_dev_dataloader, device)
-    print(f"Final STS Spearman Correlation: {dev_corr:.4f}")
-    
-    # Save final model
     torch.save(model.state_dict(), "models/simcse_nli/final_model.pt")
     print("Final model saved.")
     
-    return model, dev_corr
+    return model, best_sts_corr
 
-def hyperparameter_search():
-    """Grid search for optimal SimCSE parameters"""
-    
-    # Define parameter grid
-    param_grid = {
-        'batch_size': [32, 64, 128],
-        'lr': [1e-5, 2e-5, 5e-5],
-        'temperature': [0.05, 0.1, 0.2],
-        'epochs': [2, 3, 4],
-        'subset_size': [20000]  # Fixed subset size for search
-    }
-    
-    # Generate all combinations
-    keys = param_grid.keys()
-    values = param_grid.values()
-    param_combinations = [dict(zip(keys, combination)) 
-                         for combination in itertools.product(*values)]
-    
-    results = []
-    best_corr = -1
-    best_params = None
-    
-    print(f"Starting hyperparameter search with {len(param_combinations)} combinations")
-    
-    for i, params in enumerate(param_combinations):
-        print(f"\n{'='*50}")
-        print(f"Testing combination {i+1}/{len(param_combinations)}")
-        print(f"Parameters: {params}")
-        print(f"{'='*50}")
-        
-        # Set args with current parameters
-        args = argparse.Namespace()
-        args.batch_size = params['batch_size']
-        args.lr = params['lr']
-        args.epochs = params['epochs']
-        args.temperature = params['temperature']
-        args.small_subset = True
-        args.subset_size = params['subset_size']
-        
-        try:
-            # Train with current parameters
-            model, sts_corr = train_simcse(args)
-            
-            result = {
-                'params': params,
-                'sts_correlation': sts_corr,
-                'timestamp': datetime.now().isoformat()
-            }
-            results.append(result)
-            
-            # Track best parameters
-            if sts_corr > best_corr:
-                best_corr = sts_corr
-                best_params = params
-                print(f"NEW BEST: STS Correlation = {sts_corr:.4f}")
-            
-            # Save results incrementally
-            with open('models/simcse_nli/hparam_search_results.json', 'w') as f:
-                json.dump({
-                    'all_results': results,
-                    'best_params': best_params,
-                    'best_correlation': best_corr
-                }, f, indent=2)
-                
-        except Exception as e:
-            print(f"Error with parameters {params}: {e}")
-            continue
-    
-    print(f"\n{'='*60}")
-    print("HYPERPARAMETER SEARCH COMPLETE!")
-    print(f"Best STS Correlation: {best_corr:.4f}")
-    print(f"Best Parameters: {best_params}")
-    print(f"{'='*60}")
-    
-    return best_params, best_corr
+def train_supervised_simcse(args):
+    # Initialize model
+    model = SimCSEBERT(dropout_prob=args.dropout_prob)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
 
-def analyze_results():
-    """Analyze hyperparameter search results"""
-    try:
-        with open('models/simcse_nli/hparam_search_results.json', 'r') as f:
-            data = json.load(f)
+    # Load supervised NLI data with hard negatives
+    train_file = "data/snli_1.0_train.jsonl"
+    train_dataset = SupervisedNLIDataset(
+        file_path=train_file,
+        args=args,
+        sample_size=args.subset_size if args.small_subset else None
+    )
+    
+    # Load STS dev data
+    sts_dev_data = load_sts_data("data/sts-similarity-dev.csv", split="dev")
+    sts_dev_dataset = SentencePairDataset(sts_dev_data, args, isRegression=True)
+    sts_dev_dataloader = DataLoader(
+        sts_dev_dataset,
+        shuffle=False,
+        batch_size=args.batch_size,
+        collate_fn=sts_dev_dataset.collate_fn
+    )
+
+    dataloader = DataLoader(
+        train_dataset, 
+        batch_size=args.batch_size, 
+        shuffle=True,
+        collate_fn=train_dataset.collate_fn
+    )
+    
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    
+    best_sts_corr = -1
+    best_model_state = None
+    
+    for epoch in range(args.epochs):
+        model.train()
+        total_loss = 0
+        progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.epochs}")
         
-        results = data['all_results']
-        
-        print("Hyperparameter Search Analysis")
-        print("=" * 60)
-        
-        # Sort by performance
-        sorted_results = sorted(results, key=lambda x: x['sts_correlation'], reverse=True)
-        
-        print("Top 5 Performers:")
-        for i, result in enumerate(sorted_results[:5]):
-            print(f"{i+1}. Correlation: {result['sts_correlation']:.4f}")
-            print(f"   Params: {result['params']}")
-            print()
-        
-        # Analyze parameter importance
-        param_analysis = {}
-        for param in ['batch_size', 'lr', 'temperature', 'epochs']:
-            values = {}
-            for result in results:
-                value = result['params'][param]
-                if value not in values:
-                    values[value] = []
-                values[value].append(result['sts_correlation'])
+        for batch in progress_bar:
+            input_ids_p = batch['token_ids_p'].to(device)
+            attention_mask_p = batch['attention_mask_p'].to(device)
+            input_ids_pos = batch['token_ids_pos'].to(device)
+            attention_mask_pos = batch['attention_mask_pos'].to(device)
+            input_ids_neg = batch['token_ids_neg'].to(device)
+            attention_mask_neg = batch['attention_mask_neg'].to(device)
+            has_negative = batch['has_negative'].to(device)
             
-            # Calculate average performance for each parameter value
-            avg_performance = {v: sum(values[v])/len(values[v]) for v in values}
-            param_analysis[param] = avg_performance
+            optimizer.zero_grad()
+            
+            # Get embeddings for premise, positive, and negative
+            emb_p = model(input_ids_p, attention_mask_p)
+            emb_pos = model(input_ids_pos, attention_mask_pos)
+            emb_neg = model(input_ids_neg, attention_mask_neg) if torch.any(has_negative) else None
+            
+            # Use supervised loss with hard negatives
+            loss = model.supervised_simcse_loss(
+                emb_p, emb_pos, emb_neg, temperature=args.temperature
+            )
+            
+            loss.backward()
+            optimizer.step()
+            
+            total_loss += loss.item()
+            progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
         
-        print("Parameter Performance Analysis:")
-        for param, performances in param_analysis.items():
-            print(f"\n{param}:")
-            for value, avg_corr in sorted(performances.items(), key=lambda x: x[1], reverse=True):
-                print(f"  {value}: {avg_corr:.4f}")
-                
-    except FileNotFoundError:
-        print("No results found. Run hyperparameter search first.")
+        avg_loss = total_loss / len(dataloader)
+        print(f"Epoch {epoch+1} - Average Loss: {avg_loss:.4f}")
+        
+        # Evaluate
+        sts_corr = evaluate_sts_cosine_spearman(model, sts_dev_dataloader, device)
+        print(f"Epoch {epoch+1} - STS Spearman Correlation: {sts_corr:.4f}")
+        
+        if sts_corr > best_sts_corr:
+            best_sts_corr = sts_corr
+            best_model_state = model.state_dict().copy()
+            torch.save(best_model_state, f"models/simcse_supervised/best_model_epoch{epoch+1}_corr{sts_corr:.4f}.pt")
+            print(f"New best model saved with Spearman: {sts_corr:.4f}")
+    
+    final_corr = evaluate_sts_cosine_spearman(model, sts_dev_dataloader, device)
+    print(f"Final Dev STS Spearman Correlation: {final_corr:.4f}")
+    
+    torch.save(model.state_dict(), "models/simcse_supervised/final_model.pt")
+    return model, best_sts_corr
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -442,58 +506,20 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--temperature", type=float, default=0.05)
-    parser.add_argument("--small_subset", action="store_true", help="Use small subset for testing")
-    parser.add_argument("--subset_size", type=int, default=20_000, help="Size of subset for hyperparameter tuning")
-    parser.add_argument("--hparam_search", action="store_true", help="Run hyperparameter search")
-    parser.add_argument("--train_full", action="store_true", help="Train on full dataset with best params")
-    parser.add_argument("--analyze", action="store_true", help="Analyze hyperparameter search results")
-    
+    parser.add_argument("--dropout_prob", type=float, default=0.1)
+    parser.add_argument("--small_subset", action="store_true")
+    parser.add_argument("--subset_size", type=int, default=20_000)
+    parser.add_argument("--supervised", action="store_true", help="Use supervised SimCSE")
+    parser.add_argument("--local_files_only", action="store_true", help="Use only local model files")
     args = parser.parse_args()
     
-    # Create directories if they don't exist
-    os.makedirs("models/simcse_nli", exist_ok=True)
+    # Create directories
+    os.makedirs("models/simcse_supervised", exist_ok=True)
     os.makedirs("data", exist_ok=True)
     
-    if args.hparam_search:
-        print("Starting hyperparameter search...")
-        best_params, best_corr = hyperparameter_search()
-        
-        # Save best parameters for full training
-        with open('models/simcse_nli/best_params.json', 'w') as f:
-            json.dump({
-                'best_params': best_params,
-                'best_correlation': best_corr,
-                'search_date': datetime.now().isoformat()
-            }, f, indent=2)
-            
-    elif args.train_full:
-        # Load best parameters from previous search
-        try:
-            with open('models/simcse_nli/best_params.json', 'r') as f:
-                best_data = json.load(f)
-                best_params = best_data['best_params']
-                
-            print(f"Training with best parameters: {best_params}")
-            
-            # Set args for full training
-            args.batch_size = best_params['batch_size']
-            args.lr = best_params['lr']
-            args.epochs = best_params['epochs']
-            args.temperature = best_params['temperature']
-            args.small_subset = False  # Use full dataset
-            args.subset_size = None
-            
-            # Train on full dataset
-            model, final_corr = train_simcse(args)
-            
-            print(f"Final training complete! STS Correlation: {final_corr:.4f}")
-            
-        except FileNotFoundError:
-            print("No best parameters found. Run --hparam_search first.")
-            
-    elif args.analyze:
-        analyze_results()
-        
+    if getattr(args, 'supervised', False):
+        train_supervised_simcse(args)
     else:
-        # Default training (for testing)
         train_simcse(args)
+    
+    
