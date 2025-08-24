@@ -191,7 +191,6 @@ class MultitaskBERT(nn.Module):
             cosine_sim = torch.sum(emb1 * emb2, dim=1)
             
             return cosine_sim * 2.5 + 2.5 # Convert [-1,1] to [0,5]
-        
     
     def get_simcse_embeddings(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
@@ -547,7 +546,10 @@ def train_multitask(args):
 
         # STS training
         if args.task == "sts" or args.task == "multitask":
-            
+
+            max_batches = 10
+            batch_idx = 0
+
             # Standard
             if config.sts_training_type == "standard":
                 for batch in tqdm(
@@ -574,7 +576,7 @@ def train_multitask(args):
 
                     train_loss += loss.item()
                     num_batches += 1
-            
+
             # Sbert
             elif config.sts_training_type == "sbert":
                 for batch in tqdm(
@@ -601,6 +603,11 @@ def train_multitask(args):
 
                     train_loss += loss.item()
                     num_batches += 1
+
+                    batch_idx += 1
+
+                    if batch_idx >= max_batches:    
+                        break
             
             # SimCSE
             elif config.sts_training_type == "simcse":
