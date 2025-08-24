@@ -547,7 +547,7 @@ def train_multitask(args):
         # STS training
         if args.task == "sts" or args.task == "multitask":
 
-            max_batches = 10
+            max_batches = 5
             batch_idx = 0
 
             # Standard
