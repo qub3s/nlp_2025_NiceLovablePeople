@@ -179,7 +179,7 @@ class MultitaskBERT(nn.Module):
             # Return raw logits for MSE
             return logits
 
-        elif self.config.sts_training_type == "sbert":
+        elif self.config.sts_training_type == "sbert" or self.config.sts_training_type == "simcse":
             # Embeddings for both sentences
             emb1 = self.forward(input_ids_1, attention_mask_1)
             emb2 = self.forward(input_ids_2, attention_mask_2)
