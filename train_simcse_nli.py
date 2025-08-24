@@ -84,9 +84,6 @@ class SimCSEBERT(torch.nn.Module):
         emb1 = F.normalize(emb1, dim=1)
         emb2 = F.normalize(emb2, dim=1)
         
-        # Positive pairs are on the diagonal
-        pos_sim = (emb1 * emb2).sum(dim=1) / temperature
-        
         # Negative similarities
         neg_sim = torch.matmul(emb1, emb2.T) / temperature
         

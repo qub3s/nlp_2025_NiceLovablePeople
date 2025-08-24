@@ -65,7 +65,6 @@ class MultitaskBERT(nn.Module):
         if config.use_pretrained_simcse:
             print(f"Loading pretrained SimCSE model from: {config.simcse_model_path}")
             
-            # Load the state dictionary
             state_dict = torch.load(config.simcse_model_path, map_location='cpu')
             
             # Show model structure
@@ -93,7 +92,7 @@ class MultitaskBERT(nn.Module):
                 print(f"Missing keys: {len(missing_keys)}")
                 print(f"Unexpected keys: {len(unexpected_keys)}")
             else:
-                print("Warning: No BERT weights found in SimCSE model. Using base BERT.")
+                print("Warning: No BERT weights found in SimCSE model.")
                 
         else:
             self.bert = BertModel.from_pretrained(
@@ -181,40 +180,29 @@ class MultitaskBERT(nn.Module):
             return logits
 
         elif self.config.sts_training_type == "sbert":
-            # SBERT mean pooling
-            return self.predict_similarity_sbert(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
+            # Embeddings for both sentences
+            emb1 = self.forward(input_ids_1, attention_mask_1)
+            emb2 = self.forward(input_ids_2, attention_mask_2)
+            
+            emb1 = F.normalize(emb1, p=2, dim=1)
+            emb2 = F.normalize(emb2, p=2, dim=1)
+            
+            # Cosine similarity
+            cosine_sim = torch.sum(emb1 * emb2, dim=1)
+            
+            return cosine_sim * 2.5 + 2.5 # Convert [-1,1] to [0,5]
         
-        elif self.config.sts_training_type == "simcse":
-            # SimCSE embeddings
-            return self.predict_similarity_simcse(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2) 
-        
-
-    def predict_similarity_sbert(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
-        """
-        SBERT similarity prediction using cosine similarity
-        """
-        # Get sentence embeddings using SBERT mean pooling
-        emb1 = self.forward(input_ids_1, attention_mask_1)
-        emb2 = self.forward(input_ids_2, attention_mask_2)
-        
-        # Normalize embeddings
-        emb1 = F.normalize(emb1, p=2, dim=1)
-        emb2 = F.normalize(emb2, p=2, dim=1)
-        
-        # Cosine similarity
-        cosine_sim = torch.sum(emb1 * emb2, dim=1)
-        # For MSE
-        return cosine_sim
     
-    def predict_similarity_simcse(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+    def get_simcse_embeddings(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
-        SBERT similarity prediction using cosine similarity
+        Get SimCSE embeddings for contrastive loss training
+        Returns embeddings for both augmented versions of each sentence
         """
-        # Get sentence embeddings using SBERT mean pooling
+        # Get two different embeddings for each sentence (via dropout)
         emb1_a = self.forward(input_ids_1, attention_mask_1)
-        emb1_b = self.forward(input_ids_1, attention_mask_1)
+        emb1_b = self.forward(input_ids_1, attention_mask_1)  # Different due to dropout
         emb2_a = self.forward(input_ids_2, attention_mask_2)
-        emb2_b = self.forward(input_ids_2, attention_mask_2)
+        emb2_b = self.forward(input_ids_2, attention_mask_2)  # Different due to dropout
         
         return emb1_a, emb1_b, emb2_a, emb2_b
         
@@ -287,25 +275,24 @@ def save_model(model, optimizer, args, config, filepath):
 
 
 ####################### STS Fine-Tuning improvement ##########################
-def simcse_contrastive_loss( emb1, emb2, temperature=0.05):
-    """
-    SimCSE contrastive loss
-    """
-    batch_size = emb1.size(0)
-    
-    # Normalize embeddings
-    emb1 = F.normalize(emb1, dim=1)
-    emb2 = F.normalize(emb2, dim=1)
-    
-    # Cosine similarity matrix: N x N
-    sim_matrix = torch.matmul(emb1, emb2.T) / temperature
-    
-    # Create labels: diagonal elements are positives
-    labels = torch.arange(batch_size).to(emb1.device)
+def simcse_contrastive_loss(emb1, emb2, temperature=0.05):
+        """SimCSE contrastive loss"""
+        batch_size = emb1.size(0)
+        emb1 = F.normalize(emb1, dim=1)
+        emb2 = F.normalize(emb2, dim=1)
+        
+        # Negative similarities
+        neg_sim = torch.matmul(emb1, emb2.T) / temperature
+        
+        # Create labels: positive pairs are on the diagonal
+        labels = torch.arange(batch_size).to(emb1.device)
+        
+        # Cross entropy loss for both directions
+        loss1 = F.cross_entropy(neg_sim, labels)
+        loss2 = F.cross_entropy(neg_sim.T, labels)
 
-    loss = F.cross_entropy(sim_matrix, labels)
-    return loss
-
+        return (loss1 + loss2) / 2
+        
 def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, last_epoch=-1):
     """
     Create a schedule with a learning rate that decreases linearly from the initial lr set in the optimizer to 0, after
@@ -632,11 +619,10 @@ def train_multitask(args):
 
                     optimizer.zero_grad()
 
-                    emb1_a, emb1_b, emb2_a, emb2_b =  model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2,)
+                    # Call the method on your model instance
+                    emb1_a, emb1_b, emb2_a, emb2_b = model.get_simcse_embeddings(b_ids1, b_mask1, b_ids2, b_mask2)
                     simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
                     simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
-                    
-                    # Total loss
                     loss = simcse_loss1 + simcse_loss2
                     
                     if config.option == "finetune":
@@ -666,7 +652,7 @@ def train_multitask(args):
                     optimizer.zero_grad()
 
                     # SimCSE loss
-                    emb1_a, emb1_b, emb2_a, emb2_b =  model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2,)
+                    emb1_a, emb1_b, emb2_a, emb2_b = model.get_simcse_embeddings(b_ids1, b_mask1, b_ids2, b_mask2)
                     simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
                     simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
                     simcse_loss = simcse_loss1 + simcse_loss2
@@ -775,7 +761,6 @@ def train_multitask(args):
                         batch["attention_mask_2"].to(device),
                         batch["labels"].to(device).float(),
                     )
-                    
                     predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
                     loss = F.mse_loss(predictions, b_labels.view(-1))
                     dev_loss += loss.item()
@@ -792,11 +777,9 @@ def train_multitask(args):
                         batch["attention_mask_2"].to(device),
                         batch["labels"].to(device).float(),
                     )
-                    
-                    emb1_a, emb1_b, emb2_a, emb2_b = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                    simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
-                    simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
-                    dev_loss += (simcse_loss1 + simcse_loss2).item()
+                    predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                    loss = F.mse_loss(predictions, b_labels.view(-1))
+                    dev_loss += loss.item()
                     dev_num_batches += 1
         
         elif config.sts_training_type == "simcse_sbert":
@@ -810,14 +793,13 @@ def train_multitask(args):
                         batch["labels"].to(device).float(),
                     )
                     
-                    emb1_a, emb1_b, emb2_a, emb2_b = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                    simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
-                    simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
+                    predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                    simcse_loss = F.mse_loss(predictions, b_labels.view(-1))
 
                     predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                    sts_loss = F.mse_loss(predictions, b_labels.view(-1))
+                    sbert_loss = F.mse_loss(predictions, b_labels.view(-1))
                     
-                    dev_loss += args.alpha * simcse_loss1 + (1 - args.alpha) * sts_loss
+                    dev_loss += args.alpha * simcse_loss + (1 - args.alpha) * sbert_loss
                     dev_num_batches += 1
         
         
