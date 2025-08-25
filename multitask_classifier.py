@@ -466,6 +466,7 @@ def train_multitask(args):
         "sts_training_type": args.sts_training_type,
         "use_pretrained_simcse": args.use_pretrained_simcse,
         "simcse_model_path": args.simcse_model_path,
+        "max_batches": args.max_batches,
     }
     config = SimpleNamespace(**config)
 
@@ -547,9 +548,8 @@ def train_multitask(args):
         # STS training
         if args.task == "sts" or args.task == "multitask":
 
-            max_batches = 5
+            
             batch_idx = 0
-
             # Standard
             if config.sts_training_type == "standard":
                 for batch in tqdm(
@@ -576,6 +576,9 @@ def train_multitask(args):
 
                     train_loss += loss.item()
                     num_batches += 1
+
+                    if batch_idx >= config.max_batches:    
+                        break
 
             # Sbert
             elif config.sts_training_type == "sbert":
@@ -606,7 +609,7 @@ def train_multitask(args):
 
                     batch_idx += 1
 
-                    if batch_idx >= max_batches:    
+                    if batch_idx >= config.max_batches:    
                         break
             
             # SimCSE
@@ -639,6 +642,11 @@ def train_multitask(args):
 
                     train_loss += loss.item()
                     num_batches += 1
+
+                    batch_idx += 1
+
+                    if batch_idx >= config.max_batches:    
+                        break
 
             # Combined SimCSE + SBERT
             elif config.sts_training_type == "simcse_sbert":
@@ -678,6 +686,11 @@ def train_multitask(args):
 
                     train_loss += loss.item()
                     num_batches += 1
+
+                    batch_idx += 1
+
+                    if batch_idx >= config.max_batches:    
+                        break
 
         # QQP training
         if args.task == "qqp" or args.task == "multitask":
@@ -954,7 +967,10 @@ def get_args():
     # NEW: Add alpha value
     parser.add_argument("--alpha", type=float, default=0.5, help="Weight for SimCSE loss in combined training")
 
-    # Add warmup ratio argument
+    # NEW: Max Batches
+    parser.add_argument("--max_batches", type=float, default=0.5, help="Number of batches tro train on (for STS task only)")
+
+    # NEW: Add warmup ratio argument
     parser.add_argument("--warmup_ratio", type=float, default=0.1, help="Percentage of total steps for warmup (0.1 = 10%)")
 
     args, _ = parser.parse_known_args()
