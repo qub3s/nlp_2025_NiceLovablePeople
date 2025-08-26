@@ -81,15 +81,7 @@ class MultitaskBERT(nn.Module):
         # self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
         # self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
         
-        # self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 2, N_SENTIMENT_CLASSES) # [768+2] -> 5 # HS: 2 extra features from SWN
-        self.sentiment_classifier = nn.Sequential(
-            #layer 1
-            nn.Linear(BERT_HIDDEN_SIZE + 2, 64),
-            nn.ReLU(),
-            #layer 2
-            nn.Linear(64, N_SENTIMENT_CLASSES)
-        )
-        
+        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 5, N_SENTIMENT_CLASSES) # [768+5] -> 5 # HS: 5 extra features from SWN
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
 
@@ -169,8 +161,13 @@ class MultitaskBERT(nn.Module):
         swn_features = []
         for sentence in sentences:
             avg_pos_score, avg_neg_score, avg_obj_score = swn_processor.get_swn_scores(sentence)
-            swn_features.append([avg_pos_score, avg_neg_score])
-        
+            # ***** Create more expressive features
+            sentiment_strength = avg_pos_score + avg_neg_score  # How strong the sentiment is
+            sentiment_ratio = avg_pos_score / (avg_neg_score + 1e-8) if avg_neg_score > 0 else 10  # Pos/Neg ratio
+            net_sentiment = avg_pos_score - avg_neg_score  # Net sentiment score
+            # *****
+            swn_features.append([avg_pos_score, avg_neg_score, sentiment_strength, sentiment_ratio, net_sentiment])
+
         swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=sequence_output.device)
         
         combined_features = torch.cat([sequence_output, swn_tensor], dim=1)
