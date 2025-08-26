@@ -7,7 +7,7 @@
 #SBATCH --nodes=1                    # total number of nodes
 #SBATCH --ntasks=1                   # total number of tasks
 #SBATCH --cpus-per-task=8            # number cores per task
-#SBATCH --mail-type=all              # send mail when job begins and ends
+#SBATCH --mail-user=h.siddiqui@stud.uni-goettingen.de                # send mail when job begins and ends
 #SBATCH --output=./slurm_files/slurm-%x-%j.out     # where to write output, %x give job name, %j names job id
 #SBATCH --error=./slurm_files/slurm-%x-%j.err      # where to write slurm error
 
@@ -34,8 +34,7 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 # Run the script:
 # SST
 echo -e "\nStarting SST\n"
-echo -e "\n ---------->> SWM basic implementation with pos_score and neg_score features added on top of BERT's CLS embedding."
-python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.30 --epochs 10 --batch_size 64 --lr 1e-3
+python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.25 --epochs 10 --batch_size 64 --lr 1e-4
 echo -e "\n ---------->> SWM basic implementation with pos_score and neg_score features added on top of BERT's CLS embedding. /n no drop out layer on final CLS->5 layer"
 
 
