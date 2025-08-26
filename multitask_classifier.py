@@ -84,13 +84,10 @@ class MultitaskBERT(nn.Module):
         # self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 2, N_SENTIMENT_CLASSES) # [768+2] -> 5 # HS: 2 extra features from SWN
         self.sentiment_classifier = nn.Sequential(
             #layer 1
-            nn.Linear(BERT_HIDDEN_SIZE + 2, 128),
+            nn.Linear(BERT_HIDDEN_SIZE + 2, 64),
             nn.ReLU(),
             #layer 2
-            nn.Linear(128, 16),
-            nn.ReLU(),
-            #layer 3
-            nn.Linear(16, N_SENTIMENT_CLASSES)
+            nn.Linear(64, N_SENTIMENT_CLASSES)
         )
         
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
