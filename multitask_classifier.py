@@ -80,7 +80,7 @@ class MultitaskBERT(nn.Module):
         
         # self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
         # self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 2, N_SENTIMENT_CLASSES) # [768+2] -> 5 # HS: 2 extra features from SWN
+        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 3, N_SENTIMENT_CLASSES) # [768+3] -> 5 # HS: 3 extra features from SWN
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
 
@@ -160,7 +160,7 @@ class MultitaskBERT(nn.Module):
         swn_features = []
         for sentence in sentences:
             avg_pos_score, avg_neg_score, avg_obj_score = swn_processor.get_swn_scores(sentence)
-            swn_features.append([avg_pos_score, avg_neg_score])
+            swn_features.append([avg_pos_score, avg_neg_score, avg_obj_score])
         
         swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=sequence_output.device)
         
@@ -399,7 +399,7 @@ def train_multitask(args):
     else:
         # Default optimizer
         lr = args.lr
-        optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.025) ## HS: L2 regularization added
+        optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.01) ## HS: L2 regularization added
 
 
     best_dev_acc = float("-inf")
