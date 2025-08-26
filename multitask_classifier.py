@@ -166,7 +166,7 @@ class MultitaskBERT(nn.Module):
         
         combined_features = torch.cat([sequence_output, swn_tensor], dim=1)
         
-        # combined_features = self.sentiment_dropout(combined_features) # HS: Removed dropout before final layer
+        combined_features = self.sentiment_dropout(combined_features) # HS: dropout before final layer
         logits = self.sentiment_classifier(combined_features) ## Final logits for 5 classes
         return logits
 
