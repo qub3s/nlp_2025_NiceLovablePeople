@@ -34,7 +34,7 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 # Run the script:
 # SST
 echo -e "\nStarting SST\n"
-python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.25 --epochs 10 --batch_size 64 --lr 1e-6
+python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.25 --epochs 20 --batch_size 64 --lr 1e-6
 echo -e "\n ---------->> SWM basic implementation with pos_score and neg_score features added on top of BERT's \n CLS embedding."
 
 
