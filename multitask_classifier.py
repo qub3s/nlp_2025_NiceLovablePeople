@@ -26,6 +26,9 @@ from optimizer import AdamW
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 
+from sentiwordnet_processor import SentiWordNetProcessor
+
+
 TQDM_DISABLE = False
 
 
@@ -42,6 +45,9 @@ def seed_everything(seed=11711):
 
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
+
+
+swn_processor = SentiWordNetProcessor()
 
 
 class MultitaskBERT(nn.Module):
@@ -71,8 +77,12 @@ class MultitaskBERT(nn.Module):
         # HS: Adding a linear layer for sentiment prediction. Will put this at end of last BERT block.
         # The final BERT embedding is the hidden state of [CLS] token which I will get 
         # as dict['pooler_output'] from output of BertModel.forward().
-        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
+        
+        # self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
+        # self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 2, N_SENTIMENT_CLASSES) # 770 -> 5 # HS: 2 extra features from SWN
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
+
 
         # STS Regression Head
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -125,7 +135,7 @@ class MultitaskBERT(nn.Module):
         # Return raw logits for MSE
         return logits
         
-    def predict_sentiment(self, input_ids, attention_mask):
+    def predict_sentiment(self, input_ids, attention_mask, sentences):
         """
         Given a batch of sentences, outputs logits for classifying sentiment.
         There are 5 sentiment classes:
@@ -134,12 +144,31 @@ class MultitaskBERT(nn.Module):
         Dataset: SST
         """
         ### TODO
-        # HS: Get the sequence output from bert's forward pass and then pass it through the to bring it from 768->5 dimensions.
+        # HS (Part 1): Get the sequence output from bert's forward pass and then pass it through the to bring it from 768->5 dimensions.
         # The logits will be the output of the sentiment classifier.
+        # sequence_output = self.forward(input_ids, attention_mask)
+        # logits = self.sentiment_classifier(sequence_output) ## Final logits for 5 classes
+        # return logits
+
+        # HS (Part 2): 
+        # 1. Get BERT output like before
+        # 2. Calculate swn features/scores for each sentence in a for loop
+        # 3. Concatenate BERT output with SentiWordNet features that are made
+        # 4. Pass the combined features through the sentiment classifier to get "new and enriched" logits
         sequence_output = self.forward(input_ids, attention_mask)
-        logits = self.sentiment_classifier(sequence_output)
+    
+        swn_features = []
+        for sentence in sentences:
+            avg_pos_score, avg_neg_score, avg_obj_score = swn_processor.get_swn_scores(sentence)
+            swn_features.append([avg_pos_score, avg_neg_score])
+        
+        swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=sequence_output.device)
+        
+        combined_features = torch.cat([sequence_output, swn_tensor], dim=1)
+        
+        combined_features = self.sentiment_dropout(combined_features)
+        logits = self.sentiment_classifier(combined_features) ## Final logits for 5 classes
         return logits
-        # raise NotImplementedError
 
     def predict_paraphrase(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
@@ -389,14 +418,15 @@ def train_multitask(args):
                 desc=f"train-sst-{epoch+1:02}",
                 disable=TQDM_DISABLE,
             ):
-                b_ids, b_mask, b_labels = (
+                b_ids, b_mask, b_labels, b_sentences = (
                     batch["token_ids"].to(device),
                     batch["attention_mask"].to(device),
                     batch["labels"].to(device),
+                    batch["sents"]  # HS: Get original sentences for swm processor
                 )
 
                 optimizer.zero_grad()
-                logits = model.predict_sentiment(b_ids, b_mask)
+                logits = model.predict_sentiment(b_ids, b_mask, b_sentences) # HS 
                 loss = F.cross_entropy(logits, b_labels.view(-1))
 
                 if config.option == "finetune":

@@ -112,17 +112,18 @@ def model_eval_multitask(
         # Evaluate sentiment classification.
         if task == "sst" or task == "multitask":
             for step, batch in enumerate(tqdm(sst_dataloader, desc="eval", disable=TQDM_DISABLE)):
-                b_ids, b_mask, b_labels, b_sent_ids = (
+                b_ids, b_mask, b_labels, b_sent_ids, b_sentences = (
                     batch["token_ids"],
                     batch["attention_mask"],
                     batch["labels"],
                     batch["sent_ids"],
+                    batch["sents"],  # HS: Get original sentences for swm processor
                 )
 
                 b_ids = b_ids.to(device)
                 b_mask = b_mask.to(device)
 
-                logits = model.predict_sentiment(b_ids, b_mask)
+                logits = model.predict_sentiment(b_ids, b_mask,b_sentences) # HS 
                 y_hat = logits.argmax(dim=-1).flatten().cpu().numpy()
                 b_labels = b_labels.flatten().cpu().numpy()
 
