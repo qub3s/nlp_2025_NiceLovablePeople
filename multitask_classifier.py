@@ -80,7 +80,19 @@ class MultitaskBERT(nn.Module):
         
         # self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
         # self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 2, N_SENTIMENT_CLASSES) # [768+2] -> 5 # HS: 2 extra features from SWN
+        
+        # self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 2, N_SENTIMENT_CLASSES) # [768+2] -> 5 # HS: 2 extra features from SWN
+        self.sentiment_classifier = nn.Sequential(
+            #layer 1
+            nn.Linear(BERT_HIDDEN_SIZE + 2, 128),
+            nn.ReLU(),
+            #layer 2
+            nn.Linear(128, 16),
+            nn.ReLU(),
+            #layer 3
+            nn.Linear(16, N_SENTIMENT_CLASSES)
+        )
+        
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
 
@@ -166,7 +178,7 @@ class MultitaskBERT(nn.Module):
         
         combined_features = torch.cat([sequence_output, swn_tensor], dim=1)
         
-        combined_features = self.sentiment_dropout(combined_features) # HS: dropout before final layer
+        # combined_features = self.sentiment_dropout(combined_features) # HS: dropout before final layer
         logits = self.sentiment_classifier(combined_features) ## Final logits for 5 classes
         return logits
 
