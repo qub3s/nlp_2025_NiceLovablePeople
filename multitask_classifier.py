@@ -26,7 +26,7 @@ from optimizer import AdamW
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 
-from sentiwordnet_processor import SentiWordNetProcessor
+from sentiwordnet_processor import SentiWordNetProcessor, SentiWordNetProcessor_neg_handling
 
 
 TQDM_DISABLE = False
@@ -47,7 +47,7 @@ BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
 
-swn_processor = SentiWordNetProcessor()
+swn_processor = SentiWordNetProcessor_neg_handling()
 
 
 class MultitaskBERT(nn.Module):
@@ -83,7 +83,6 @@ class MultitaskBERT(nn.Module):
         
         self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 5, N_SENTIMENT_CLASSES) # [768+5] -> 5 # HS: 5 extra features from SWN
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
-
 
         # STS Regression Head
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
