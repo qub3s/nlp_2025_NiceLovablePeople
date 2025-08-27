@@ -161,18 +161,18 @@ class MultitaskBERT(nn.Module):
         swn_features = []
         for sentence in sentences:
             avg_pos_score, avg_neg_score, avg_obj_score = swn_processor.get_swn_scores(sentence)
-            # ***** Create more expressive features
+            # ***** Create more expressive features from positive and negative scores *****
             sentiment_strength = avg_pos_score + avg_neg_score  # How strong the sentiment is
             sentiment_ratio = avg_pos_score / (avg_neg_score + 1e-8) if avg_neg_score > 0 else 10  # Pos/Neg ratio
             net_sentiment = avg_pos_score - avg_neg_score  # Net sentiment score
-            # *****
+            # *****************************************************************************
             swn_features.append([avg_pos_score, avg_neg_score, sentiment_strength, sentiment_ratio, net_sentiment])
 
         swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=sequence_output.device)
         
         combined_features = torch.cat([sequence_output, swn_tensor], dim=1)
         
-        # combined_features = self.sentiment_dropout(combined_features) # HS: dropout before final layer
+        combined_features = self.sentiment_dropout(combined_features) # HS: dropout before final layer
         logits = self.sentiment_classifier(combined_features) ## Final logits for 5 classes
         return logits
 
