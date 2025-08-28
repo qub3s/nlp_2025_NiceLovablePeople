@@ -146,6 +146,7 @@ class ImprovedSimCSEBERT(torch.nn.Module):
     def supervised_simcse_loss(self, emb_p, emb_pos, emb_neg, has_negative, temperature=0.05, margin=0.3):
         """Simple and robust supervised loss implementation"""
         batch_size = emb_p.size(0)
+        device = emb_p.device
         
         # Normalize embeddings
         emb_p = F.normalize(emb_p, p=2, dim=1)
@@ -158,19 +159,22 @@ class ImprovedSimCSEBERT(torch.nn.Module):
         neg_sim = torch.matmul(emb_p, emb_pos.T) / temperature
         
         # For examples with hard negatives, replace their self-similarity with hard negative
-        valid_neg_mask = has_negative.bool()
+        valid_neg_mask = has_negative.bool().to(device)  # Move to same device
         if torch.any(valid_neg_mask):
             emb_neg = F.normalize(emb_neg[valid_neg_mask], p=2, dim=1)
             hard_neg_sim = torch.sum(emb_p[valid_neg_mask] * emb_neg, dim=1) / temperature
-            neg_sim[valid_neg_mask, torch.arange(batch_size)[valid_neg_mask]] = hard_neg_sim - margin
+            
+            # Create indices on the correct device
+            indices = torch.arange(batch_size, device=device)[valid_neg_mask]
+            neg_sim[valid_neg_mask, indices] = hard_neg_sim - margin
         
         # Mask out the diagonal (positive pairs)
-        mask = torch.eye(batch_size, dtype=torch.bool, device=emb_p.device)
+        mask = torch.eye(batch_size, dtype=torch.bool, device=device)
         neg_sim = neg_sim.masked_fill(mask, -10.0)
         
         # Create logits: positive similarity + all negative similarities
         logits = torch.cat([pos_sim.unsqueeze(1), neg_sim], dim=1)
-        labels = torch.zeros(batch_size, dtype=torch.long, device=emb_p.device)
+        labels = torch.zeros(batch_size, dtype=torch.long, device=device)
         
         return F.cross_entropy(logits, labels)
 
