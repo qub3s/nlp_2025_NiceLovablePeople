@@ -44,7 +44,7 @@ def transform_data(dataset, max_length=256, shuffle=True):
     attention_mask = token["attention_mask"]
 
     # Get DataLoader
-    batch_size = 32 #TODO
+    batch_size = 2#32 #TODO
 
     # If not test set
     if ('sentence2' in dataset.keys()):
@@ -115,8 +115,9 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             print("Predicted_ids shape:", predicted_ids.shape)
             print("Padded Predicted_ids:", padded_predicted_ids.shape)
             
-            cos_sim = nn.CosineSimilarity(dim=1, eps=1e-6)
-            input_similarity = cos_sim(padded_predicted_ids.type(torch.DoubleTensor), input_for_loss.type(torch.DoubleTensor)).item()
+            cos_sim = nn.CosineEmbeddingLoss()
+            target = torch.ones(padding[0]) * -1
+            input_similarity = cos_sim(padded_predicted_ids.to(torch.float32), input_for_loss.to(torch.float32), target)
             print("Input_sim: ", input_similarity)
 
             # outputs_for_input = model.generate(
@@ -158,7 +159,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             # Logging
             train_loss += loss.detach().float()
             train_num_batches += 1
-            #break #TODO
+            break #TODO
         
         # Validation
         model.eval()
@@ -186,7 +187,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             # Logging
             dev_loss += loss.detach().float()
             dev_num_batches += 1
-            #break #TODO
+            break #TODO
         
         # Log loss
         epoch_train_loss = train_loss / train_num_batches
