@@ -26,7 +26,7 @@ from optimizer import AdamW
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 
-from sentiwordnet_processor import SentiWordNetProcessor, SentiWordNetProcessor_neg_handling
+from sentiwordnet_processor import SentiWordNetProcessor, SentiWordNetProcessor_NegHandling
 
 
 TQDM_DISABLE = False
@@ -47,7 +47,7 @@ BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
 
-swn_processor = SentiWordNetProcessor_neg_handling()
+swn_processor = SentiWordNetProcessor_NegHandling()
 
 
 class MultitaskBERT(nn.Module):
