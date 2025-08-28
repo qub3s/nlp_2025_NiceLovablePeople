@@ -143,34 +143,34 @@ class ImprovedSimCSEBERT(torch.nn.Module):
         
         return (loss1 + loss2) / 2
     
-    def supervised_simcse_loss(self, emb_p, emb_pos, emb_neg, has_negative, 
-                              temperature=0.05, margin=0.3):
-        """Improved supervised loss with margin and better negative handling"""
+    def supervised_simcse_loss(self, emb_p, emb_pos, emb_neg, has_negative, temperature=0.05, margin=0.3):
+        """Simple and robust supervised loss implementation"""
         batch_size = emb_p.size(0)
         
+        # Normalize embeddings
         emb_p = F.normalize(emb_p, p=2, dim=1)
         emb_pos = F.normalize(emb_pos, p=2, dim=1)
         
         # Positive similarity
         pos_sim = torch.sum(emb_p * emb_pos, dim=1) / temperature
         
-        # In-batch negatives (all other examples in batch)
+        # In-batch negatives
         neg_sim = torch.matmul(emb_p, emb_pos.T) / temperature
-        mask = torch.eye(batch_size).bool().to(emb_p.device)
-        neg_sim = neg_sim[~mask].view(batch_size, batch_size - 1)
         
-        # Add hard negatives if available
+        # For examples with hard negatives, replace their self-similarity with hard negative
         valid_neg_mask = has_negative.bool()
         if torch.any(valid_neg_mask):
             emb_neg = F.normalize(emb_neg[valid_neg_mask], p=2, dim=1)
             hard_neg_sim = torch.sum(emb_p[valid_neg_mask] * emb_neg, dim=1) / temperature
-            # Concatenate hard negatives
-            hard_neg_sim = hard_neg_sim.unsqueeze(1)
-            neg_sim_with_hard = torch.cat([neg_sim[valid_neg_mask], hard_neg_sim], dim=1)
-            neg_sim[valid_neg_mask] = neg_sim_with_hard
+            neg_sim[valid_neg_mask, torch.arange(batch_size)[valid_neg_mask]] = hard_neg_sim - margin
         
+        # Mask out the diagonal (positive pairs)
+        mask = torch.eye(batch_size, dtype=torch.bool, device=emb_p.device)
+        neg_sim = neg_sim.masked_fill(mask, -10.0)
+        
+        # Create logits: positive similarity + all negative similarities
         logits = torch.cat([pos_sim.unsqueeze(1), neg_sim], dim=1)
-        labels = torch.zeros(batch_size, dtype=torch.long).to(emb_p.device)
+        labels = torch.zeros(batch_size, dtype=torch.long, device=emb_p.device)
         
         return F.cross_entropy(logits, labels)
 
