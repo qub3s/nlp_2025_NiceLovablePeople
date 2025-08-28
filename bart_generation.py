@@ -40,20 +40,20 @@ def transform_data(dataset, max_length=256, shuffle=True):
     formatted_input = list(dataset.apply(lambda row: ' '.join([row['sentence1'], SEP, row['sentence1_segment_location'], SEP, row['paraphrase_type_ids']]), axis=1))
     # TODO 
     input_for_loss = list(dataset["sentence1"])
-    input_for_loss = tokenizer(input_for_loss, return_tensors="pt", padding=True)["input_ids"]
+    input_for_loss = tokenizer(input_for_loss, return_tensors="pt", max_length=max_length, padding="max_length")["input_ids"]
     # Get input_ids and attention_mask
-    token = tokenizer(formatted_input, return_tensors="pt", padding=True) # max_length=max_length, padding="max_length") 
+    token = tokenizer(formatted_input, return_tensors="pt", max_length=max_length, padding="max_length") 
     input_ids = token["input_ids"]
     attention_mask = token["attention_mask"]
 
     # Get DataLoader
-    batch_size = 8 #TODO
+    batch_size = 1#8 #TODO
     print("Batch Size: ", batch_size)
 
     # If not test set
     if ('sentence2' in dataset.keys()):
         formatted_target = list(dataset["sentence2"])
-        target_token = tokenizer(formatted_target, return_tensors="pt", padding=True)
+        target_token = tokenizer(formatted_target, return_tensors="pt", max_length=max_length, padding="max_length")
         dataset = TensorDataset(input_ids, attention_mask, target_token["input_ids"], input_for_loss)
     else:
         dataset = TensorDataset(input_ids, attention_mask)
@@ -72,6 +72,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     """
     ### TODO
     #raise NotImplementedError
+    max_length=256
     l = 1 #TODO
     lr = 1e-5
     epochs = 2#5  #TODO 
@@ -123,7 +124,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             predicted_ids = outputs.logits.argmax(-1)
             padding = input_for_loss.shape #- predicted_ids.shape.item()
             #print("Padding:", (0, input_for_loss.shape[1]-predicted_ids.shape[1]))
-            padded_predicted_ids = F.pad(predicted_ids, (0, 51-predicted_ids.shape[1]), mode='constant', value=1)
+            padded_predicted_ids = F.pad(predicted_ids, (0, max_length-predicted_ids.shape[1]), mode='constant', value=1)
             #print("Predicted_ids shape:", predicted_ids.shape)
             #print("Padded Predicted_ids:", padded_predicted_ids.shape)
             
@@ -171,7 +172,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
                 predicted_ids = outputs.logits.argmax(-1)
                 padding = input_for_loss.shape #- predicted_ids.shape.item()
                 print("Padding:", (input_for_loss.shape[1]-predicted_ids.shape[1]))
-                padded_predicted_ids = F.pad(predicted_ids, (0, input_for_loss.shape[1]-predicted_ids.shape[1]), mode='constant', value=1)
+                padded_predicted_ids = F.pad(predicted_ids, (0, max_length-predicted_ids.shape[1]), mode='constant', value=1)
                 
                 # Calculate penalty
                 cos_sim = nn.CosineEmbeddingLoss()
