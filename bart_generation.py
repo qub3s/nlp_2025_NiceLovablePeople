@@ -3,6 +3,7 @@ import random
 
 import numpy as np
 from torch import nn
+import torch.nn.functional as F
 import pandas as pd
 import torch
 import sklearn
@@ -10,6 +11,8 @@ from sacrebleu.metrics import BLEU
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
+
+import matplotlib.pyplot as plt
 
 from optimizer import AdamW
 
@@ -71,17 +74,24 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     #raise NotImplementedError
     l = 1 #TODO
     lr = 1e-5
-    epochs = 5  #TODO 
+    epochs = 2#5  #TODO 
     print("Epochs: ", epochs)
     optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
     model.to(device)
+
+    dev_losses = []
+    train_losses = []
+    dev_losses_penalised = []
+    train_losses_penalised = []
 
     # Training loop
     for epoch in range(epochs):
 
         # Reset variables
         train_loss = 0
+        train_loss_penelised = 0
         dev_loss = 0
+        dev_loss_penalised = 0
         train_num_batches = 0
         dev_num_batches = 0
 
@@ -109,59 +119,29 @@ def train_model(model, train_data, dev_data, device, tokenizer):
                 labels=b_labels
             )
 
+            # Prepare predictions for penalty calculation
             predicted_ids = outputs.logits.argmax(-1)
-            
-            import torch.nn.functional as F
             padding = input_for_loss.shape #- predicted_ids.shape.item()
             #print("Padding:", (0, input_for_loss.shape[1]-predicted_ids.shape[1]))
             padded_predicted_ids = F.pad(predicted_ids, (0, 51-predicted_ids.shape[1]), mode='constant', value=1)
             #print("Predicted_ids shape:", predicted_ids.shape)
             #print("Padded Predicted_ids:", padded_predicted_ids.shape)
             
+            # Calculate penalty
             cos_sim = nn.CosineEmbeddingLoss()
             target = torch.ones(padding[0]) * -1
             target = target.to(device)
             input_similarity = cos_sim(padded_predicted_ids.to(torch.float32), input_for_loss.to(torch.float32), target)
             #print("Input_sim: ", input_similarity)
 
-            # outputs_for_input = model.generate(
-            #     b_input_ids,
-            #     attention_mask=b_attention_mask,
-            #     max_length=50,
-            #     num_beams=5,
-            #     early_stopping=True,
-            #     padding = True
-            # )
-            # # Get loss, do backpass and andjust gradients
-            # # Penalise word similarity to input
-            # #cos_sim = nn.CosineSimilarity(dim=1, eps=1e-6)
-            # bleu = BLEU()
-            # pred_text = [
-            #     tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-            #     for g in outputs_for_input
-            # ]
-            # input_text = [
-            #     tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-            #     for g in input_for_loss
-            # ]
-
-            # print("input shape:", input_for_loss)
-            # print("Outputshape:", outputs_for_input)
-
-            # print("input:", input_text)
-            # print("Output:", pred_text)
-
-            # input_similarity = bleu.corpus_score(["Elefant"], ["Hallo"]).score
-
-            #input_similarity = cos_sim(outputs_for_input.type(torch.DoubleTensor), input_for_loss.type(torch.DoubleTensor))
-            #print("loss sim:", l * input_similarity)
-
+            # Calculate penalised loss and optimise model
             loss = outputs.loss + l * input_similarity
             #print("loss:", loss)
             loss.backward()
             optimizer.step()
             # Logging
-            train_loss += loss.detach().float()
+            train_loss += outputs.loss.detach().float() #todo
+            train_loss_penelised = loss.detach().float()
             train_num_batches += 1
             break #TODO
         
@@ -171,11 +151,12 @@ def train_model(model, train_data, dev_data, device, tokenizer):
                 dev_data, desc=f"dev-{epoch+1:02}", disable=TQDM_DISABLE
             ):
             # Prepare data
-            b_input_ids, b_attention_mask, b_labels, _ = batch
+            b_input_ids, b_attention_mask, b_labels, input_for_loss = batch
 
             b_input_ids = b_input_ids.to(device)
             b_attention_mask = b_attention_mask.to(device)
             b_labels = b_labels.to(device)
+            input_for_loss = input_for_loss.to(device)
 
             # No gradients during validation
             with torch.no_grad():
@@ -185,20 +166,54 @@ def train_model(model, train_data, dev_data, device, tokenizer):
                     attention_mask=b_attention_mask,
                     labels=b_labels,
                 )
-                # Get loss
-                loss = outputs.loss
+                
+                # Prepare predictions for penalty calculation
+                predicted_ids = outputs.logits.argmax(-1)
+                padding = input_for_loss.shape #- predicted_ids.shape.item()
+                print("Padding:", (input_for_loss.shape[1]-predicted_ids.shape[1]))
+                padded_predicted_ids = F.pad(predicted_ids, (0, input_for_loss.shape[1]-predicted_ids.shape[1]), mode='constant', value=1)
+                
+                # Calculate penalty
+                cos_sim = nn.CosineEmbeddingLoss()
+                target = torch.ones(padding[0]) * -1
+                target = target.to(device)
+                input_similarity = cos_sim(padded_predicted_ids.to(torch.float32), input_for_loss.to(torch.float32), target)
+                print("validation Penalty: ", input_similarity)
+                # Calculate penalised loss
+                loss = outputs.loss + l * input_similarity
             
             # Logging
-            dev_loss += loss.detach().float()
+            dev_loss += outputs.loss.detach().float()
+            dev_loss_penalised += loss.detach().float()
             dev_num_batches += 1
             break #TODO
         
-        # Log loss
+        # Log losses
         epoch_train_loss = train_loss / train_num_batches
         epoch_dev_loss = dev_loss / dev_num_batches
+        dev_losses.append(epoch_dev_loss)
+        train_losses.append(epoch_train_loss)
+        epoch_train_loss_penalised = train_loss_penelised / train_num_batches
+        epoch_dev_loss_penalised = dev_loss_penalised / dev_num_batches
+        dev_losses_penalised.append(epoch_dev_loss_penalised)
+        train_losses_penalised.append(epoch_train_loss_penalised)
         tqdm.write(f"Epoch {epoch+1}\t Train Loss: {epoch_train_loss:.4f}")
         tqdm.write(f"Epoch {epoch+1}\t Validation Loss: {epoch_dev_loss:.4f}")
-    
+        tqdm.write(f"Epoch {epoch+1}\t Train Loss Penalised: {epoch_train_loss_penalised:.4f}")
+        tqdm.write(f"Epoch {epoch+1}\t Validation Loss Penalised: {epoch_dev_loss_penalised:.4f}")
+
+    # Plot loss over time
+    epochs_plot = range(1, epochs + 1)
+    plt.plot(epochs_plot, train_losses, 'o', label='Training loss')
+    plt.plot(epochs_plot, dev_losses, 'o', label='Validation loss')
+    plt.plot(epochs_plot, train_losses_penalised, 'o', label='Training loss penalised')
+    plt.plot(epochs_plot, dev_losses_penalised, 'o', label='Validation loss penalised')
+    plt.title('Training and validation loss with and without penalty')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.savefig("plots/losses_plot.png", bbox_inches='tight')
+
     filepath = f"models/baseline-{epochs}-{lr}-paraphrase_detection.pt"
     torch.save(model, filepath)
     print(f"Saving the model to {filepath}.")
