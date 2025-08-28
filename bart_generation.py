@@ -44,7 +44,8 @@ def transform_data(dataset, max_length=256, shuffle=True):
     attention_mask = token["attention_mask"]
 
     # Get DataLoader
-    batch_size = 2#32 #TODO
+    batch_size = 8 #TODO
+    print("Batch Size: ", batch_size)
 
     # If not test set
     if ('sentence2' in dataset.keys()):
@@ -71,6 +72,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     l = 1 #TODO
     lr = 1e-5
     epochs = 5  #TODO 
+    print("Epochs: ", epochs)
     optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
     model.to(device)
 
@@ -95,6 +97,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             b_input_ids = b_input_ids.to(device)
             b_attention_mask = b_attention_mask.to(device)
             b_labels = b_labels.to(device)
+            input_for_loss = input_for_loss.to(device)
 
             # Reset gradients
             optimizer.zero_grad()
@@ -110,15 +113,16 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             
             import torch.nn.functional as F
             padding = input_for_loss.shape #- predicted_ids.shape.item()
-            print("Padding:", (0, input_for_loss.shape[1]-predicted_ids.shape[1]))
+            #print("Padding:", (0, input_for_loss.shape[1]-predicted_ids.shape[1]))
             padded_predicted_ids = F.pad(predicted_ids, (0, 51-predicted_ids.shape[1]), mode='constant', value=1)
-            print("Predicted_ids shape:", predicted_ids.shape)
-            print("Padded Predicted_ids:", padded_predicted_ids.shape)
+            #print("Predicted_ids shape:", predicted_ids.shape)
+            #print("Padded Predicted_ids:", padded_predicted_ids.shape)
             
             cos_sim = nn.CosineEmbeddingLoss()
             target = torch.ones(padding[0]) * -1
+            target = target.to(device)
             input_similarity = cos_sim(padded_predicted_ids.to(torch.float32), input_for_loss.to(torch.float32), target)
-            print("Input_sim: ", input_similarity)
+            #print("Input_sim: ", input_similarity)
 
             # outputs_for_input = model.generate(
             #     b_input_ids,
@@ -192,7 +196,6 @@ def train_model(model, train_data, dev_data, device, tokenizer):
         # Log loss
         epoch_train_loss = train_loss / train_num_batches
         epoch_dev_loss = dev_loss / dev_num_batches
-        print("epoch_train_loss:", epoch_train_loss)
         tqdm.write(f"Epoch {epoch+1}\t Train Loss: {epoch_train_loss:.4f}")
         tqdm.write(f"Epoch {epoch+1}\t Validation Loss: {epoch_dev_loss:.4f}")
     
