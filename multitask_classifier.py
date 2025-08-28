@@ -808,7 +808,6 @@ def train_multitask(args):
         train_loss = train_loss / num_batches
 
         model.eval()
-
         with torch.no_grad():
 
             # Evaluation on dev set
@@ -1022,7 +1021,7 @@ def get_args():
     parser.add_argument("--alpha", type=float, default=0.5, help="Weight for SimCSE loss in combined training")
 
     # NEW: Max Batches
-    parser.add_argument("--max_batches", type=float, default=90, help="Number of batches tro train on (for STS task only)")
+    parser.add_argument("--max_batches", type=float, default=180, help="Number of batches tro train on (for STS task only)")
 
     # NEW: Add warmup ratio argument
     parser.add_argument("--warmup_ratio", type=float, default=0.1, help="Percentage of total steps for warmup (0.1 = 10%)")
