@@ -166,7 +166,10 @@ class ImprovedSimCSEBERT(torch.nn.Module):
             
             # Create indices on the correct device
             indices = torch.arange(batch_size, device=device)[valid_neg_mask]
-            neg_sim[valid_neg_mask, indices] = hard_neg_sim - margin
+            
+            # Ensure same dtype for assignment (important for mixed precision)
+            hard_neg_values = (hard_neg_sim - margin).to(neg_sim.dtype)
+            neg_sim[valid_neg_mask, indices] = hard_neg_values
         
         # Mask out the diagonal (positive pairs)
         mask = torch.eye(batch_size, dtype=torch.bool, device=device)
