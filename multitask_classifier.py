@@ -84,6 +84,13 @@ class MultitaskBERT(nn.Module):
         self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 5, N_SENTIMENT_CLASSES) # [768+5] -> 5 # HS: 5 extra features from SWN
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
+        # Gate to combine BERT and SWN features with dynamic weights
+        self.swn_gate = nn.Sequential(
+            nn.Linear(768 + 5, 256),  # h_cls + SWN features
+            nn.ReLU(),
+            nn.Linear(256, 2),        
+            nn.Sigmoid())   # BERT_weight and SWN_weight
+        
         # STS Regression Head
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
@@ -155,24 +162,64 @@ class MultitaskBERT(nn.Module):
         # 2. Calculate swn features/scores for each sentence in a for loop
         # 3. Concatenate BERT output with SentiWordNet features that are made
         # 4. Pass the combined features through the sentiment classifier to get "new and enriched" logits
-        sequence_output = self.forward(input_ids, attention_mask)
+        h_cls = self.forward(input_ids, attention_mask)
     
         swn_features = []
         for sentence in sentences:
             avg_pos_score, avg_neg_score, avg_obj_score = swn_processor.get_swn_scores(sentence)
-            # ***** Create more expressive features from positive and negative scores *****
+            # Engineer more expressive features from positive and negative scores
             sentiment_strength = avg_pos_score + avg_neg_score  # How strong the sentiment is
             sentiment_ratio = avg_pos_score / (avg_neg_score + 1e-8) if avg_neg_score > 0 else 10  # Pos/Neg ratio
             net_sentiment = avg_pos_score - avg_neg_score  # Net sentiment score
-            # *****************************************************************************
+            
             swn_features.append([avg_pos_score, avg_neg_score, sentiment_strength, sentiment_ratio, net_sentiment])
 
-        swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=sequence_output.device)
+        swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=h_cls.device)
         
-        combined_features = torch.cat([sequence_output, swn_tensor], dim=1)
+        # Gating system implementation ********************
+        gate_input = torch.cat([h_cls, swn_tensor], dim=1)
+        
+        gate_weights = self.swn_gate(gate_input)
+        
+        bert_weight, swn_weight = gate_weights[:, 0].unsqueeze(1), gate_weights[:, 1].unsqueeze(1)      # swn_weight, bert_weight = gate_weights[:, 0:1], gate_weights[:, 1:2]
+        
+        bert_enriched = h_cls * bert_weight
+        swn_enriched = swn_tensor * swn_weight
+        # *************************************************
+        combined_features = torch.cat([bert_enriched, swn_enriched], dim=1)
         
         combined_features = self.sentiment_dropout(combined_features) # HS: dropout before final layer
         logits = self.sentiment_classifier(combined_features) ## Final logits for 5 classes
+        return logits
+    
+    # Modify your prediction method:
+    def predict_sentiment(self, input_ids, attention_mask, sentences):
+        # Get original BERT features
+        h_cls = self.forward(input_ids, attention_mask)
+        
+        # Get SWN features
+        swn_features = []
+        for sentence in sentences:
+            avg_pos, avg_neg, _ = swn_processor.get_swn_scores(sentence)
+            swn_features.append([avg_pos, avg_neg])
+        swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=h_cls.device)
+        
+        # Concatenate for gate input
+        gate_input = torch.cat([h_cls, swn_tensor], dim=1)
+        
+        # Learn dynamic weights [SWN_weight, BERT_weight]
+        gate_weights = self.sw_n_gate(gate_input)
+        swn_weight, bert_weight = gate_weights[:, 0:1], gate_weights[:, 1:2]
+        
+        # Apply gated fusion
+        swn_enriched = swn_tensor * swn_weight
+        bert_enriched = h_cls * bert_weight
+        
+        # Combine
+        combined = torch.cat([bert_enriched, swn_enriched], dim=1)
+        
+        # Final classification
+        logits = self.sentiment_classifier(combined)
         return logits
 
     def predict_paraphrase(
