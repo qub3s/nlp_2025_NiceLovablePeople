@@ -91,6 +91,9 @@ class MultitaskBERT(nn.Module):
             nn.Linear(256, 2),        
             nn.Sigmoid())   # BERT_weight and SWN_weight
         
+
+        
+        
         # STS Regression Head
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
@@ -192,35 +195,7 @@ class MultitaskBERT(nn.Module):
         logits = self.sentiment_classifier(combined_features) ## Final logits for 5 classes
         return logits
     
-    # Modify your prediction method:
-    def predict_sentiment(self, input_ids, attention_mask, sentences):
-        # Get original BERT features
-        h_cls = self.forward(input_ids, attention_mask)
-        
-        # Get SWN features
-        swn_features = []
-        for sentence in sentences:
-            avg_pos, avg_neg, _ = swn_processor.get_swn_scores(sentence)
-            swn_features.append([avg_pos, avg_neg])
-        swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=h_cls.device)
-        
-        # Concatenate for gate input
-        gate_input = torch.cat([h_cls, swn_tensor], dim=1)
-        
-        # Learn dynamic weights [SWN_weight, BERT_weight]
-        gate_weights = self.sw_n_gate(gate_input)
-        swn_weight, bert_weight = gate_weights[:, 0:1], gate_weights[:, 1:2]
-        
-        # Apply gated fusion
-        swn_enriched = swn_tensor * swn_weight
-        bert_enriched = h_cls * bert_weight
-        
-        # Combine
-        combined = torch.cat([bert_enriched, swn_enriched], dim=1)
-        
-        # Final classification
-        logits = self.sentiment_classifier(combined)
-        return logits
+
 
     def predict_paraphrase(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
