@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 
 from optimizer import AdamW
 
+from tokenizer import BertTokenizer
+
 
 TQDM_DISABLE = False
 
@@ -38,12 +40,9 @@ def transform_data(dataset, max_length=256, shuffle=True):
     # Format it according to: sentence_1 + SEP + sentence_1 segment location + SEP + paraphrase_type_ids
     SEP = tokenizer.sep_token
     formatted_input = list(dataset.apply(lambda row: ' '.join([row['sentence1'], SEP, row['sentence1_segment_location'], SEP, row['paraphrase_type_ids']]), axis=1))
-    # TODO 
-    input_for_loss = list(dataset["sentence1"])
-    input_for_loss = tokenizer(input_for_loss, return_tensors="pt", max_length=max_length, padding="max_length")["input_ids"]
-    print(input_for_loss[-1])
+    
     # Get input_ids and attention_mask
-    token = tokenizer(formatted_input, return_tensors="pt", max_length=max_length, padding="max_length") 
+    token = tokenizer(formatted_input, return_tensors="pt", padding=True) 
     input_ids = token["input_ids"]
     attention_mask = token["attention_mask"]
 
@@ -54,8 +53,8 @@ def transform_data(dataset, max_length=256, shuffle=True):
     # If not test set
     if ('sentence2' in dataset.keys()):
         formatted_target = list(dataset["sentence2"])
-        target_token = tokenizer(formatted_target, return_tensors="pt", max_length=max_length, padding="max_length")
-        dataset = TensorDataset(input_ids, attention_mask, target_token["input_ids"], input_for_loss)
+        target_token = tokenizer(formatted_target, return_tensors="pt", padding=True)
+        dataset = TensorDataset(input_ids, attention_mask, target_token["input_ids"])
     else:
         dataset = TensorDataset(input_ids, attention_mask)
 
@@ -76,7 +75,14 @@ def evaluator(input, prediction, device):
     Return the loss.
     """
     
+    self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+
     # TODO prepare data for the bert model
+
+    # Prepare data for bert model (evaluator)
+    token = tokenizer(batch, return_tensors="pt", padding=True) 
+    b_input_ids = token["input_ids"]
+    b_attention_mask = token["attention_mask"]
     # Don't forget to put everything on the device
 
     return 0
@@ -89,8 +95,9 @@ def train_with_evaluator(model, train_data, dev_data, device, tokenizer):
 
     l = 1 #TODO
     lr = 1e-5
-    epochs = 2#5  #TODO 
+    epochs = 1#5  #TODO 
     optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
+    cos_sim = nn.CosineEmbeddingLoss()
     model.to(device)
 
     print("Training with Evaluator")
@@ -155,19 +162,15 @@ def train_with_evaluator(model, train_data, dev_data, device, tokenizer):
             evaluator_loss = evaluator(batch, pred_text, device)
 
             # Prepare predictions for penalty calculation
-            # TODO FIX THE PADDING MESS
-            padding = input_for_loss.shape #- predicted_ids.shape.item()
-            #print("Padding:", (0, input_for_loss.shape[1]-predicted_ids.shape[1]))
-            padded_predicted_ids = F.pad(predicted_ids, (0, max_length-predicted_ids.shape[1]), mode='constant', value=1)
-            #print("Predicted_ids shape:", predicted_ids.shape)
-            #print("Padded Predicted_ids:", padded_predicted_ids.shape)
-            
+            max_length = max(input_for_loss.shape[1], predicted_ids.shape[1])
+
+            # Pad both tensors and transform to floats for CosineEmbeddingLoss
+            padded_batch = F.pad(input_for_loss.float(), (0, max_length-input_for_loss.shape[1]), mode='constant', value=tokenizer.pad_token_id)
+            padded_predicted_ids = F.pad(predicted_ids.float(), (0, max_length-predicted_ids.shape[1]), mode='constant', value=tokenizer.pad_token_id)
+                
             # Calculate penalty
-            cos_sim = nn.CosineEmbeddingLoss()
-            target = torch.ones(padding[0]) * -1
-            target = target.to(device)
-            penalty = cos_sim(padded_predicted_ids.to(torch.float32), batch.to(torch.float32), target)
-            #print("Input_sim: ", input_similarity)
+            target = torch.full((batch.size(0),), -1.0, device=device)
+            penalty = cos_sim(padded_predicted_ids, padded_batch, target)
 
             # Calculate penalised loss and optimise model
             # TODO use l and (1-l) as weights
@@ -222,7 +225,6 @@ def train_with_evaluator(model, train_data, dev_data, device, tokenizer):
                 padded_predicted_ids = F.pad(predicted_ids, (0, max_length-predicted_ids.shape[1]), mode='constant', value=1)
                 
                 # Calculate penalty
-                cos_sim = nn.CosineEmbeddingLoss()
                 target = torch.ones(padding[0]) * -1
                 target = target.to(device)
                 penalty = cos_sim(padded_predicted_ids.to(torch.float32), batch.to(torch.float32), target)
@@ -279,18 +281,30 @@ def train_with_evaluator(model, train_data, dev_data, device, tokenizer):
 
 ### Train without Evaluator ###
 
+def mean_pool(hidden_states, mask):
+    # hidden_states: [batch, seq_len, hidden_dim]
+    # mask: [batch, seq_len]
+    mask = mask.unsqueeze(-1).expand(hidden_states.size())  # [batch, seq_len, hidden_dim]
+    summed = (hidden_states * mask).sum(1)
+    counts = mask.sum(1).clamp(min=1)  # avoid div by zero
+    return summed / counts
+
+def get_l(step, total_steps, l_start=0.7, l_end=0.1):
+    # exponential weight decay for l
+    return l_end + (l_start - l_end) * (0.95 ** step)
+
 def train_model(model, train_data, dev_data, device, tokenizer):
     """
     Train the model. Return and save the model.
     """
     ### TODO
     #raise NotImplementedError
-    max_length=256
-    l = 1 #TODO
     lr = 1e-5
-    epochs = 2#5  #TODO 
+    epochs = 1#5  #TODO 
+    total_steps = epochs * len(train_data)  # total optimizer steps
     print("Epochs: ", epochs)
     optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
+    cos_sim = nn.CosineEmbeddingLoss()
     model.to(device)
 
     dev_losses = []
@@ -316,12 +330,11 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             ):
 
             # Prepare data
-            b_input_ids, b_attention_mask, b_labels, input_for_loss = batch
+            b_input_ids, b_attention_mask, b_labels = batch
 
             b_input_ids = b_input_ids.to(device)
             b_attention_mask = b_attention_mask.to(device)
             b_labels = b_labels.to(device)
-            input_for_loss = input_for_loss.to(device)
 
             # Reset gradients
             optimizer.zero_grad()
@@ -330,33 +343,35 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             outputs = model(
                 b_input_ids,
                 attention_mask=b_attention_mask,
-                labels=b_labels
+                labels=b_labels,
+                output_hidden_states=True
             )
 
-            # Prepare predictions for penalty calculation
-            predicted_ids = outputs.logits.argmax(-1)
-            padding = input_for_loss.shape #- predicted_ids.shape.item()
-            #print("Padding:", (0, input_for_loss.shape[1]-predicted_ids.shape[1]))
-            padded_predicted_ids = F.pad(predicted_ids, (0, max_length-predicted_ids.shape[1]), mode='constant', value=1)
-            #print("Predicted_ids shape:", predicted_ids.shape)
-            #print("Padded Predicted_ids:", padded_predicted_ids.shape)
+            # Get encoder embeddings (input representation)
+            encoder_hidden = outputs.encoder_last_hidden_state  # [batch, seq_len, hidden_dim]
+            input_embeds = mean_pool(encoder_hidden, b_attention_mask) # [batch, hidden_dim]
+
+            # Get decoder embeddings (output representation)
+            decoder_hidden = outputs.decoder_hidden_states[-1]  # last layer [batch, seq_len, hidden_dim]
+            # Need a mask for generated labels (not attention mask)
+            label_mask = (b_labels != tokenizer.pad_token_id).int()
+            output_embeds = mean_pool(decoder_hidden, label_mask) # [batch, hidden_dim]
             
             # Calculate penalty
-            cos_sim = nn.CosineEmbeddingLoss()
-            target = torch.ones(padding[0]) * -1
-            target = target.to(device)
-            input_similarity = cos_sim(padded_predicted_ids.to(torch.float32), input_for_loss.to(torch.float32), target)
-            #print("Input_sim: ", input_similarity)
+            target = torch.full((input_embeds.size(0),), -1.0, device=device)
+            penalty = cos_sim(output_embeds, input_embeds, target)
 
             # Calculate penalised loss and optimise model
-            loss = outputs.loss + l * input_similarity
-            #print("loss:", loss)
+            l = get_l(train_num_batches, total_steps)
+            loss = (1-l) * outputs.loss + l * penalty
             loss.backward()
             optimizer.step()
+            
             # Logging
-            train_loss += outputs.loss.detach().float() #todo
-            train_loss_penelised = loss.detach().float()
+            train_loss += outputs.loss.detach().float().cpu().item() #todo
+            train_loss_penelised = loss.detach().float().cpu().item()
             train_num_batches += 1
+
             break #TODO
         
         # Validation
@@ -365,12 +380,11 @@ def train_model(model, train_data, dev_data, device, tokenizer):
                 dev_data, desc=f"dev-{epoch+1:02}", disable=TQDM_DISABLE
             ):
             # Prepare data
-            b_input_ids, b_attention_mask, b_labels, input_for_loss = batch
+            b_input_ids, b_attention_mask, b_labels = batch
 
             b_input_ids = b_input_ids.to(device)
             b_attention_mask = b_attention_mask.to(device)
             b_labels = b_labels.to(device)
-            input_for_loss = input_for_loss.to(device)
 
             # No gradients during validation
             with torch.no_grad():
@@ -382,23 +396,23 @@ def train_model(model, train_data, dev_data, device, tokenizer):
                 )
                 
                 # Prepare predictions for penalty calculation
-                predicted_ids = outputs.logits.argmax(-1)
-                padding = input_for_loss.shape #- predicted_ids.shape.item()
-                print("Padding:", (input_for_loss.shape[1]-predicted_ids.shape[1]))
-                padded_predicted_ids = F.pad(predicted_ids, (0, max_length-predicted_ids.shape[1]), mode='constant', value=1)
+                #predicted_ids = outputs.logits.argmax(-1)
+                #padding = input_for_loss.shape #- predicted_ids.shape.item()
+                #print("Padding:", (input_for_loss.shape[1]-predicted_ids.shape[1]))
+                #padded_predicted_ids = F.pad(predicted_ids, (0, max_length-predicted_ids.shape[1]), mode='constant', value=1)
                 
                 # Calculate penalty
-                cos_sim = nn.CosineEmbeddingLoss()
-                target = torch.ones(padding[0]) * -1
-                target = target.to(device)
-                input_similarity = cos_sim(padded_predicted_ids.to(torch.float32), input_for_loss.to(torch.float32), target)
-                print("validation Penalty: ", input_similarity)
+                #cos_sim = nn.CosineEmbeddingLoss()
+                #target = torch.ones(padding[0]) * -1
+                #target = target.to(device)
+                #input_similarity = cos_sim(padded_predicted_ids.to(torch.float32), input_for_loss.to(torch.float32), target)
+                #print("validation Penalty: ", input_similarity)
                 # Calculate penalised loss
-                loss = outputs.loss + l * input_similarity
+                loss = outputs.loss #+ l * input_similarity
             
             # Logging
-            dev_loss += outputs.loss.detach().float()
-            dev_loss_penalised += loss.detach().float()
+            dev_loss += outputs.loss.detach().float().cpu().item()
+            #dev_loss_penalised += loss.detach().float()
             dev_num_batches += 1
             break #TODO
         
@@ -408,20 +422,20 @@ def train_model(model, train_data, dev_data, device, tokenizer):
         dev_losses.append(epoch_dev_loss)
         train_losses.append(epoch_train_loss)
         epoch_train_loss_penalised = train_loss_penelised / train_num_batches
-        epoch_dev_loss_penalised = dev_loss_penalised / dev_num_batches
-        dev_losses_penalised.append(epoch_dev_loss_penalised)
+        #epoch_dev_loss_penalised = dev_loss_penalised / dev_num_batches
+        #dev_losses_penalised.append(epoch_dev_loss_penalised)
         train_losses_penalised.append(epoch_train_loss_penalised)
         tqdm.write(f"Epoch {epoch+1}\t Train Loss: {epoch_train_loss:.4f}")
         tqdm.write(f"Epoch {epoch+1}\t Validation Loss: {epoch_dev_loss:.4f}")
         tqdm.write(f"Epoch {epoch+1}\t Train Loss Penalised: {epoch_train_loss_penalised:.4f}")
-        tqdm.write(f"Epoch {epoch+1}\t Validation Loss Penalised: {epoch_dev_loss_penalised:.4f}")
+        #tqdm.write(f"Epoch {epoch+1}\t Validation Loss Penalised: {epoch_dev_loss_penalised:.4f}")
 
     # Plot loss over time
     epochs_plot = range(1, epochs + 1)
     plt.plot(epochs_plot, train_losses, 'o', label='Training loss')
     plt.plot(epochs_plot, dev_losses, 'o', label='Validation loss')
     plt.plot(epochs_plot, train_losses_penalised, 'o', label='Training loss penalised')
-    plt.plot(epochs_plot, dev_losses_penalised, 'o', label='Validation loss penalised')
+    #plt.plot(epochs_plot, dev_losses_penalised, 'o', label='Validation loss penalised')
     plt.title('Training and validation loss with and without penalty')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
@@ -571,11 +585,11 @@ def finetune_paraphrase_generation(args):
 
     # TODO load new dataset
     # only need input sentence for this
-    train_dataset_NAME = []
-    dev_dataset_NAME = []
-    print(f"Loaded {len(train_dataset_NAME)} NAME training samples.") #todo
+    #train_dataset_NAME = []
+    #dev_dataset_NAME = []
+    #print(f"Loaded {len(train_dataset_NAME)} NAME training samples.") #todo
 
-    model = train_with_evaluator(model, train_data_NAME, dev_data_NAME, device, tokenizer)
+    #model = train_with_evaluator(model, train_data_NAME, dev_data_NAME, device, tokenizer)
 
     print("Training with Evaluator finished.")
 
