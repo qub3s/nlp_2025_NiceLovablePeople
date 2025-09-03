@@ -47,7 +47,7 @@ def transform_data(dataset, max_length=256, shuffle=True):
     attention_mask = token["attention_mask"]
 
     # Get DataLoader
-    batch_size = 1#8 #TODO
+    batch_size = 8 #TODO
     print("Batch Size: ", batch_size)
 
     # If not test set
@@ -300,10 +300,10 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     ### TODO
     #raise NotImplementedError
     lr = 1e-5
-    epochs = 1#5  #TODO 
+    epochs = 5 #TODO 
     total_steps = epochs * len(train_data)  # total optimizer steps
     print("Epochs: ", epochs)
-    optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
+    optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.01) #lr = 2e-5, eps = 1e-8 is default
     cos_sim = nn.CosineEmbeddingLoss()
     model.to(device)
 
@@ -372,7 +372,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             train_loss_penelised = loss.detach().float().cpu().item()
             train_num_batches += 1
 
-            break #TODO
+            #break #TODO
         
         # Validation
         model.eval()
@@ -414,7 +414,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             dev_loss += outputs.loss.detach().float().cpu().item()
             #dev_loss_penalised += loss.detach().float()
             dev_num_batches += 1
-            break #TODO
+            #break #TODO
         
         # Log losses
         epoch_train_loss = train_loss / train_num_batches
@@ -507,7 +507,7 @@ def evaluate_model(model, test_data, device, tokenizer):
     dataloader = transform_data(test_data, shuffle=False)
     with torch.no_grad():
         for batch in dataloader: 
-            input_ids, attention_mask, _, _ = batch # TODO ,_ remove
+            input_ids, attention_mask, _ = batch
             input_ids = input_ids.to(device)
             attention_mask = attention_mask.to(device)
 
