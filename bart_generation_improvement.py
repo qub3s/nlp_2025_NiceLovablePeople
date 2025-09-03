@@ -13,6 +13,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, BartForConditionalGeneration
 
 import matplotlib.pyplot as plt
+from bart_generation_earlystopping import PGEarlyStopping
 
 from optimizer import AdamW
 
@@ -47,7 +48,7 @@ def transform_data(dataset, max_length=256, shuffle=True):
     attention_mask = token["attention_mask"]
 
     # Get DataLoader
-    batch_size = 8 #TODO
+    batch_size = 32 #TODO
     print("Batch Size: ", batch_size)
 
     # If not test set
@@ -299,13 +300,19 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     """
     ### TODO
     #raise NotImplementedError
+
+    dataloader_train = transform_data(train_data)
+    dataloader_dev = transform_data(dev_data)
+
     lr = 1e-5
-    epochs = 5 #TODO 
+    epochs = 100 #TODO 
     total_steps = epochs * len(train_data)  # total optimizer steps
-    print("Epochs: ", epochs)
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.01) #lr = 2e-5, eps = 1e-8 is default
     cos_sim = nn.CosineEmbeddingLoss()
     model.to(device)
+
+    filepath = f"models/finetune-paraphrase_detection-{lr}-"
+    early_stop = PGEarlyStopping(filepath, patience=10, verbose=True, delta=0)
 
     dev_losses = []
     train_losses = []
@@ -326,7 +333,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
         # Training
         model.train()
         for batch in tqdm(
-                train_data, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
+                dataloader_train, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
             ):
 
             # Prepare data
@@ -363,7 +370,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
 
             # Calculate penalised loss and optimise model
             l = get_l(train_num_batches, total_steps)
-            loss = (1-l) * outputs.loss + l * penalty
+            loss = outputs.loss #(1-l) * outputs.loss + l * penalty
             loss.backward()
             optimizer.step()
             
@@ -377,7 +384,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
         # Validation
         model.eval()
         for batch in tqdm(
-                dev_data, desc=f"dev-{epoch+1:02}", disable=TQDM_DISABLE
+                dataloader_dev, desc=f"dev-{epoch+1:02}", disable=TQDM_DISABLE
             ):
             # Prepare data
             b_input_ids, b_attention_mask, b_labels = batch
@@ -416,6 +423,8 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             dev_num_batches += 1
             #break #TODO
         
+        bleu_score = evaluate_model(model, dev_data, device, tokenizer)
+
         # Log losses
         epoch_train_loss = train_loss / train_num_batches
         epoch_dev_loss = dev_loss / dev_num_batches
@@ -428,7 +437,13 @@ def train_model(model, train_data, dev_data, device, tokenizer):
         tqdm.write(f"Epoch {epoch+1}\t Train Loss: {epoch_train_loss:.4f}")
         tqdm.write(f"Epoch {epoch+1}\t Validation Loss: {epoch_dev_loss:.4f}")
         tqdm.write(f"Epoch {epoch+1}\t Train Loss Penalised: {epoch_train_loss_penalised:.4f}")
+        tqdm.write(f"Epoch {epoch+1}\t Validation Penalised Bleu Score: {bleu_score:.4f}")
         #tqdm.write(f"Epoch {epoch+1}\t Validation Loss Penalised: {epoch_dev_loss_penalised:.4f}")
+
+        # check for early stopping
+        if early_stop(bleu_score, model, epoch):
+            break
+            
 
     # Plot loss over time
     epochs_plot = range(1, epochs + 1)
@@ -441,10 +456,6 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     plt.ylabel('Loss')
     plt.legend()
     plt.savefig("plots/losses_plot.png", bbox_inches='tight')
-
-    filepath = f"models/baseline-{epochs}-{lr}-paraphrase_detection.pt"
-    torch.save(model, filepath)
-    print(f"Saving the model to {filepath}.")
 
     return model
 
@@ -577,8 +588,8 @@ def finetune_paraphrase_generation(args):
     # You might do a split of the train data into train/validation set here
     train_dataset, dev_dataset = sklearn.model_selection.train_test_split(train_dataset, test_size=0.2)
 
-    train_data = transform_data(train_dataset)
-    dev_data = transform_data(dev_dataset) 
+    #train_data = transform_data(train_dataset)
+    #dev_data = transform_data(dev_dataset) 
     test_data = transform_data(test_dataset, shuffle=False)
 
     print(f"Loaded {len(train_dataset)} ETPC training samples.")
@@ -593,7 +604,7 @@ def finetune_paraphrase_generation(args):
 
     print("Training with Evaluator finished.")
 
-    model = train_model(model, train_data, dev_data, device, tokenizer)
+    model = train_model(model, train_dataset, dev_dataset, device, tokenizer)
 
     print("Training finished.")
 
