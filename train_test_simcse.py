@@ -634,7 +634,7 @@ def train_supervised_simcse(args):
             has_negative = batch['has_negative'].to(device)
             
             optimizer.zero_grad()
-    
+            
             if scaler:
                 with autocast():
                     # Forward pass
@@ -648,19 +648,19 @@ def train_supervised_simcse(args):
                     )
                     loss = loss / accumulation_steps
                 
-                # Backward pass (always do this)
+                # Backward pass
                 scaler.scale(loss).backward()
                 
-                # Only unscale, clip, and step at accumulation boundaries
+                # Only update at accumulation boundaries
                 if (step + 1) % accumulation_steps == 0:
-                    scaler.unscale_(optimizer)  # Now safe to call
+                    scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     scaler.step(optimizer)
                     scaler.update()
                     scheduler.step()
                     optimizer.zero_grad()
-
             else:
+                # CPU training
                 emb_p = model(input_ids_p, attention_mask_p)
                 emb_pos = model(input_ids_pos, attention_mask_pos)
                 emb_neg = model(input_ids_neg, attention_mask_neg) if torch.any(has_negative) else None
@@ -672,9 +672,9 @@ def train_supervised_simcse(args):
                 loss = loss / accumulation_steps
                 
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 
                 if (step + 1) % accumulation_steps == 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     optimizer.step()
                     scheduler.step()
                     optimizer.zero_grad()

@@ -515,6 +515,7 @@ def train_multitask(args):
         "use_pretrained_simcse": args.use_pretrained_simcse,
         "simcse_model_path": args.simcse_model_path,
         "max_batches": args.max_batches,
+        "file_path": args.filepath,
     }
     config = SimpleNamespace(**config)
 
@@ -807,76 +808,76 @@ def train_multitask(args):
 
         train_loss = train_loss / num_batches
 
-        model.eval()
-        with torch.no_grad():
+        # model.eval()
+        # with torch.no_grad():
 
-            # Evaluation on dev set
-            if config.sts_training_type == "standard":
-                if args.task == "sts" or args.task == "multitask":
-                    for batch in tqdm(sts_dev_dataloader):
-                        b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                            batch["token_ids_1"].to(device),
-                            batch["attention_mask_1"].to(device),
-                            batch["token_ids_2"].to(device),
-                            batch["attention_mask_2"].to(device),
-                            batch["labels"].to(device).float(),
-                        )
+        #     # Evaluation on dev set
+        #     if config.sts_training_type == "standard":
+        #         if args.task == "sts" or args.task == "multitask":
+        #             for batch in tqdm(sts_dev_dataloader):
+        #                 b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+        #                     batch["token_ids_1"].to(device),
+        #                     batch["attention_mask_1"].to(device),
+        #                     batch["token_ids_2"].to(device),
+        #                     batch["attention_mask_2"].to(device),
+        #                     batch["labels"].to(device).float(),
+        #                 )
                         
-                        predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                        loss = F.mse_loss(predictions, b_labels.view(-1))
-                        dev_loss += loss.item()
-                        dev_num_batches += 1
+        #                 predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+        #                 loss = F.mse_loss(predictions, b_labels.view(-1))
+        #                 dev_loss += loss.item()
+        #                 dev_num_batches += 1
 
-            elif config.sts_training_type == "sbert":
-                if args.task == "sts" or args.task == "multitask":
-                    for batch in tqdm(sts_dev_dataloader):
-                        b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                            batch["token_ids_1"].to(device),
-                            batch["attention_mask_1"].to(device),
-                            batch["token_ids_2"].to(device),
-                            batch["attention_mask_2"].to(device),
-                            batch["labels"].to(device).float(),
-                        )
-                        predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                        loss = F.mse_loss(predictions, b_labels.view(-1))
-                        dev_loss += loss.item()
-                        dev_num_batches += 1
+        #     elif config.sts_training_type == "sbert":
+        #         if args.task == "sts" or args.task == "multitask":
+        #             for batch in tqdm(sts_dev_dataloader):
+        #                 b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+        #                     batch["token_ids_1"].to(device),
+        #                     batch["attention_mask_1"].to(device),
+        #                     batch["token_ids_2"].to(device),
+        #                     batch["attention_mask_2"].to(device),
+        #                     batch["labels"].to(device).float(),
+        #                 )
+        #                 predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+        #                 loss = F.mse_loss(predictions, b_labels.view(-1))
+        #                 dev_loss += loss.item()
+        #                 dev_num_batches += 1
                 
             
-            elif config.sts_training_type == "simcse":
-                if args.task == "sts" or args.task == "multitask":
-                    for batch in tqdm(sts_dev_dataloader):
-                        b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                            batch["token_ids_1"].to(device),
-                            batch["attention_mask_1"].to(device),
-                            batch["token_ids_2"].to(device),
-                            batch["attention_mask_2"].to(device),
-                            batch["labels"].to(device).float(),
-                        )
-                        predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                        loss = F.mse_loss(predictions, b_labels.view(-1))
-                        dev_loss += loss.item()
-                        dev_num_batches += 1
+        #     elif config.sts_training_type == "simcse":
+        #         if args.task == "sts" or args.task == "multitask":
+        #             for batch in tqdm(sts_dev_dataloader):
+        #                 b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+        #                     batch["token_ids_1"].to(device),
+        #                     batch["attention_mask_1"].to(device),
+        #                     batch["token_ids_2"].to(device),
+        #                     batch["attention_mask_2"].to(device),
+        #                     batch["labels"].to(device).float(),
+        #                 )
+        #                 predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+        #                 loss = F.mse_loss(predictions, b_labels.view(-1))
+        #                 dev_loss += loss.item()
+        #                 dev_num_batches += 1
             
-            elif config.sts_training_type == "simcse_sbert":
-                if args.task == "sts" or args.task == "multitask":
-                    for batch in tqdm(sts_dev_dataloader):
-                        b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                            batch["token_ids_1"].to(device),
-                            batch["attention_mask_1"].to(device),
-                            batch["token_ids_2"].to(device),
-                            batch["attention_mask_2"].to(device),
-                            batch["labels"].to(device).float(),
-                        )
+        #     elif config.sts_training_type == "simcse_sbert":
+        #         if args.task == "sts" or args.task == "multitask":
+        #             for batch in tqdm(sts_dev_dataloader):
+        #                 b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+        #                     batch["token_ids_1"].to(device),
+        #                     batch["attention_mask_1"].to(device),
+        #                     batch["token_ids_2"].to(device),
+        #                     batch["attention_mask_2"].to(device),
+        #                     batch["labels"].to(device).float(),
+        #                 )
                         
-                        predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                        simcse_loss = F.mse_loss(predictions, b_labels.view(-1))
+        #                 predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+        #                 simcse_loss = F.mse_loss(predictions, b_labels.view(-1))
 
-                        dev_loss += simcse_loss
-                        dev_num_batches += 1
+        #                 dev_loss += simcse_loss
+        #                 dev_num_batches += 1
         
         
-        dev_loss = dev_loss / dev_num_batches
+        # dev_loss = dev_loss / dev_num_batches
 
         quora_train_acc, _, _, sst_train_acc, _, _, sts_train_corr, _, _, etpc_train_acc, _, _ = (
             model_eval_multitask(
@@ -912,14 +913,14 @@ def train_multitask(args):
             "sts": (sts_train_corr, sts_dev_corr),
             "qqp": (quora_train_acc, quora_dev_acc),
             "etpc": (etpc_train_acc, etpc_dev_acc),
-            "multitask": (0, 0),  # TODO
+            "multitask": (0, 0),
         }[args.task]
 
-        # Store metrics
-        train_correlations.append(sts_train_corr)
-        dev_correlations.append(sts_dev_corr)
-        train_losses.append(train_loss)
-        dev_losses.append(dev_loss)
+        # # Store metrics
+        # train_correlations.append(sts_train_corr)
+        # dev_correlations.append(sts_dev_corr)
+        # train_losses.append(train_loss)
+        # dev_losses.append(dev_loss)
 
         print(
             f"Epoch {epoch+1:02} ({args.task}): train loss :: {train_loss:.3f}, train :: {train_acc:.3f}, dev :: {dev_acc:.3f}"
@@ -1156,15 +1157,23 @@ def get_args():
     )
     parser.add_argument("--local_files_only", action="store_true")
 
+    default_filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
+    parser.add_argument(
+        "--filepath", 
+        type=str, 
+        default=default_filepath,
+        help="Path to save/load the model"
+    )
+
     args = parser.parse_args()
     return args
 
-
 if __name__ == "__main__":
     args = get_args()
-    args.filepath = (
-        f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"  # save path
-    )
+
+    if not hasattr(args, 'filepath') or args.filepath is None:
+        args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
+
     seed_everything(args.seed)  # fix the seed for reproducibility
     train_multitask(args)
     test_model(args)
