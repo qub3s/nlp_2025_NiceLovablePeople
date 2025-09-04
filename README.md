@@ -223,11 +223,11 @@ https://aclanthology.org/2020.acl-main.341.pdf
 
 i. Analyzed `datasets.py` to find how to access the raw 'sentence' column of csv for each batch of the dataloader easily. Found that we can use `batch['sents']`. This is crucial because my changes can work on any seen/unseen dataset now.
 
-ii. Wrote `sentiwordnet_processor.py` module which downloads NLTK dependencies and  `SentiWordNetProcessor` class which takes in a sentence, calculates scores for each word in the sentence and aggregates the scores to get sentence-level positive score and negative score. Lemmatization before scoring was added to enable score calculation for more words per sentence.
+ii. Wrote `sentiwordnet_processor.py` module which downloads NLTK dependencies and  `SentiWordNetProcessor` class which takes in a sentence, calculates scores for each word in the sentence and aggregates the scores to get sentence-level positive score and negative score. Lemmatization before scoring was added to enable score calculation for more words per sentence. I also get the avg_obj_score feature here but avoided using it as a feature because it added noise to the model and was hurting performance of my classifier.
 
 iii. Altered the `predict_sentiment()` function of `MultitaskBERT` class so it can calculate SWM’s avg_pos_score and avg_neg_score and then append them in the CLS token’s vector before classification.
 
-iv. Slight changes in the training loop to make sure that the raw sentences are being accessed for each batch and passed into the `predict_sentiment()` function. `(evaluation.py` changes same as training loop)
+iv. Slight changes in the training loop to make sure that the raw sentences are being accessed for each batch and passed into the `predict_sentiment()` function. (`evaluation.py` changes same as training loop)
 
 v. Installing NLTK on cluster: `setup_gwdg_nltk.sh`
 
