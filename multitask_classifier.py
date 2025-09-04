@@ -88,7 +88,7 @@ class MultitaskBERT(nn.Module):
             nn.Linear(768 + 5, 256),  # h_cls + SWN features
             nn.ReLU(),
             nn.Linear(256, 2),   
-            nn.Softmax())   # BERT_weight and SWN_weight
+            nn.Sigmoid())   # BERT_weight and SWN_weight
 
         # STS Regression Head
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)

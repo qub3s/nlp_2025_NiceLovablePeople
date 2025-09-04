@@ -290,11 +290,14 @@ The weight of these two sources is equal at the moment but in reality one source
 
 **Experiment:** Instead of just concatenating SWN scores to h_cls, I introduced a simple learned gating mechanism to let the model dynamically decide how much to trust SWN vs BERT features for each example.
 
-It's a simple NN which takes in h_cls+SWN scores and outputs two weights using a sigmoid layer. First weight for BERT features and second weight for the SWN scores.
+It's a simple NN which takes in h_cls+SWN scores and outputs two weights (0.0 < weight < 1.0) using a sigmoid function. First weight for BERT features and second weight for the SWN scores.
 
 Architecture: (768+5) → 256 → 2
 
 The bert_weight is multiplied element-wise to 768 BERT features, and the swn_weight is multiplied element-wise to the 5 SWN features before all are concatenated and mapped to the classification head.
+
+Lastly, instead of a sigmoid function, a softmax was also tried to make the weights sum up to 1.0 but it reduced dev accuracy so sigmoid was chosen at the end.
+
 
 
 
