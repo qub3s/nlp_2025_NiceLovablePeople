@@ -92,8 +92,6 @@ class MultitaskBERT(nn.Module):
             nn.Sigmoid())   # BERT_weight and SWN_weight
         
 
-        
-        
         # STS Regression Head
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
