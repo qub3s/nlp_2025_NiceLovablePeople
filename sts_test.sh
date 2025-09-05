@@ -29,22 +29,7 @@ run_simcse-sbert_experiment() {
     mkdir -p "$OUTPUT_DIR"
     
     # REDUCED: max_batches=2, epochs=2
-    python multitask_classifier.py \
-        --task sts \
-        --option finetune \
-        --regressor_type simple \
-        --sts_training_type simcse_sbert \
-        --forward_type simcse_sbert \
-        --use_pretrained_simcse \
-        --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" \
-        --max_batches 2 \          # REDUCED
-        --epochs 2 \               # REDUCED
-        --batch_size 16 \          # REDUCED
-        --lr 2e-5 \
-        --alpha "$alpha" \
-        --seed "$seed" \
-        --use_gpu \
-        --filepath "$OUTPUT_DIR"
+    python multitask_classifier.py --task sts --option finetune --regressor_type simple --sts_training_type simcse_sbert --forward_type simcse_sbert --use_pretrained_simcse --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" --max_batches 2 --epochs 2 --batch_size 16 --lr 2e-5 --alpha "$alpha" --seed "$seed" --use_gpu --filepath "$OUTPUT_DIR"
     
     echo "Completed simcse-sbert alpha=$alpha, seed=$seed"
 }
@@ -59,21 +44,7 @@ run_simcse_experiment() {
     mkdir -p "$OUTPUT_DIR"
     
     # REDUCED: max_batches=2, epochs=2
-    python multitask_classifier.py \
-        --task sts \
-        --option finetune \
-        --regressor_type simple \
-        --sts_training_type simcse \
-        --forward_type raw_cls \
-        --use_pretrained_simcse \
-        --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" \
-        --max_batches 2 \          # REDUCED (use fixed small value)
-        --epochs 2 \               # REDUCED
-        --batch_size 16 \          # REDUCED
-        --lr 3e-5 \
-        --seed "$seed" \
-        --use_gpu \
-        --filepath "$OUTPUT_DIR"
+    python multitask_classifier.py --task sts --option finetune --regressor_type simple --sts_training_type simcse --forward_type raw_cls --use_pretrained_simcse --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" --max_batches 2 --epochs 2 --batch_size 16 --lr 3e-5 --seed "$seed" --use_gpu --filepath "$OUTPUT_DIR"
     
     echo "Completed SimCSE-only batch_size=$batch_size, seed=$seed"
 }
@@ -88,21 +59,7 @@ run_sbert_experiment() {
     mkdir -p "$OUTPUT_DIR"
     
     # REDUCED: max_batches=2, epochs=1
-    python multitask_classifier.py \
-    --task sts \
-    --option finetune \
-    --regressor_type sbert \
-    --forward_type sbert_mean \
-    --sts_training_type sbert \
-    --use_pretrained_simcse \
-    --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" \
-    --max_batches 2 \          # REDUCED (use fixed small value)
-    --epochs 1 \               # REDUCED
-    --lr 1e-5 \
-    --batch_size 16 \          # REDUCED
-    --use_gpu \
-    --seed "$seed" \
-    --filepath "$OUTPUT_DIR"
+    python multitask_classifier.py --task sts --option finetune --regressor_type sbert --forward_type sbert_mean --sts_training_type sbert --use_pretrained_simcse --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" --max_batches 2 --epochs 1 --lr 1e-5 --batch_size 16 --use_gpu --seed 11711 --filepath "test_debug"
     
     echo "Completed SBERT-only batch_size=$batch_size, seed=$seed"
 }
