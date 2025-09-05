@@ -305,8 +305,15 @@ class MultitaskBERT(nn.Module):
         logits = self.paraphrase_type_classifier(cls_embedding)
         
         return logits
-    
+
+def ensure_directory_exists(filepath):
+    directory = os.path.dirname(filepath)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+    return filepath
+
 def save_model(model, optimizer, args, config, filepath):
+    filepath = ensure_directory_exists(filepath)
     save_info = {
         "model": model.state_dict(),
         "optim": optimizer.state_dict(),
