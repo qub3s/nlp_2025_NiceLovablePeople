@@ -1027,9 +1027,29 @@ def get_args():
     # NEW: Add warmup ratio argument
     parser.add_argument("--warmup_ratio", type=float, default=0.1, help="Percentage of total steps for warmup (0.1 = 10%)")
 
+    # Hyperparameters - MOVE THESE UP before the parse_known_args() call
+    parser.add_argument(
+        "--batch_size", help="sst: 64 can fit a 12GB GPU", type=int, default=64
+    )
+    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
+    parser.add_argument(
+        "--lr",
+        type=float,
+        help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
+        default=1e-5,  # Set a default, we'll update it later
+    )
+    parser.add_argument("--local_files_only", action="store_true")
+
+    # Parse known args to get the option for conditional defaults
     args, _ = parser.parse_known_args()
-    print(f"args: {args}")
-    # Dataset pathsHepatitis
+    
+    # Update lr default based on option
+    if args.option == "pretrain":
+        parser.set_defaults(lr=1e-3)
+    else:
+        parser.set_defaults(lr=1e-5)
+
+    # Dataset paths
     parser.add_argument("--sst_train", type=str, default="data/sst-sentiment-train.csv")
     parser.add_argument("--sst_dev", type=str, default="data/sst-sentiment-dev.csv")
     parser.add_argument(
@@ -1144,28 +1164,21 @@ def get_args():
         ),
     )
 
-    # Hyperparameters
-    parser.add_argument(
-        "--batch_size", help="sst: 64 can fit a 12GB GPU", type=int, default=64
-    )
-    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
-    parser.add_argument(
-        "--lr",
-        type=float,
-        help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
-        default=1e-3 if args.option == "pretrain" else 1e-5,
-    )
-    parser.add_argument("--local_files_only", action="store_true")
-
-    default_filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
+    # Filepath argument - add this at the end
     parser.add_argument(
         "--filepath", 
         type=str, 
-        default=default_filepath,
+        default=None,  # Set to None initially
         help="Path to save/load the model"
     )
 
+    # Parse all arguments
     args = parser.parse_args()
+    
+    # Now calculate default_filepath using the parsed values
+    if args.filepath is None:
+        args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
+    
     return args
 
 if __name__ == "__main__":
