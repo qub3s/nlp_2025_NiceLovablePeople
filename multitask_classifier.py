@@ -78,13 +78,19 @@ class MultitaskBERT(nn.Module):
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
 
-        # QQP
+        # QQP - Verbesserter Classifier
         self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
-        # Klassischer SBERT-Klassifikationskopf für binäre Aufgaben:
-        # Eingabe: [u, v, |u-v|] -> Größe: 768 * 3 = 2304
-        self.paraphrase_classifier = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
-        nn.init.xavier_uniform_(self.paraphrase_classifier.weight, gain=nn.init.calculate_gain('relu'))
-        nn.init.constant_(self.paraphrase_classifier.bias, 0.0)
+        self.paraphrase_classifier = nn.Sequential(
+            nn.Linear(BERT_HIDDEN_SIZE * 3, 768),
+            nn.GELU(),
+            nn.Dropout(config.hidden_dropout_prob),
+            nn.Linear(768, 1)
+        )
+        # Initialisierung
+        nn.init.xavier_uniform_(self.paraphrase_classifier[0].weight)
+        nn.init.constant_(self.paraphrase_classifier[0].bias, 0.0)
+        nn.init.xavier_uniform_(self.paraphrase_classifier[3].weight)
+        nn.init.constant_(self.paraphrase_classifier[3].bias, 0.0)
 
 
 
@@ -193,6 +199,9 @@ class MultitaskBERT(nn.Module):
         combined_features = torch.cat([u, v, abs_diff], dim=-1)
         logits = self.paraphrase_classifier(combined_features).squeeze(-1)
         return logits
+    
+        # LOSS ZUSATZTERM (1) - 10491466
+        # MNRL Loss - 10491549
 
     def predict_paraphrase_types(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
@@ -416,8 +425,8 @@ def train_multitask(args):
 
 
         optimizer_grouped_parameters = [
-            {"params": bert_parameters, "lr": 2e-5},   
-            {"params": classifier_parameters, "lr": args.lr}, 
+            {"params": bert_parameters, "lr": 2e-5, "weight_decay": 0.01},   
+            {"params": classifier_parameters, "lr": args.lr,"weight_decay": 0.01}, 
         ]
 
         optimizer = AdamW(optimizer_grouped_parameters)
