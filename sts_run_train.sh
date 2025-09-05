@@ -2,13 +2,13 @@
 #SBATCH --job-name=sts_alpha_sweep_20seeds
 #SBATCH -t 45:00:00  # Longer time for more seeds
 #SBATCH -p grete:shared
-#SBATCH -G A100:4    # Request 4 GPUs for parallel runs
-#SBATCH --mem-per-gpu=8G
+#SBATCH -G A100:4
+#SBATCH --mem-per-gpu=16G
 #SBATCH --nodes=1
-#SBATCH --ntasks=4   # 4 parallel tasks
-#SBATCH --cpus-per-task=8
-#SBATCH --output=./slurm_files/sts_sweep_20seeds-%x-%j.out
-#SBATCH --error=./slurm_files/sts_sweep_20seeds-%x-%j.err
+#SBATCH --ntasks=4
+#SBATCH --cpus-per-task=2
+#SBATCH --output=./slurm_files/sts_test-%x-%j.out
+#SBATCH --error=./slurm_files/sts_test-%x-%j.err
 
 module load miniforge3
 eval "$(conda shell.bash hook)"
@@ -49,8 +49,7 @@ run_simcse-sbert_experiment() {
     echo "Running simcse-sbert alpha=$alpha, seed=$seed"
     
     # Create unique output directory
-    OUTPUT_DIR="models/confidence/simcse_sbert_alpha_${alpha}_seed_${seed}"
-    mkdir -p "$OUTPUT_DIR"
+    OUTPUT_DIR="models/confidence/simcse_sbert_alpha_${alpha}_seed_${seed}.pt"
     
     # Run the training
     python multitask_classifier.py \
@@ -81,8 +80,7 @@ run_simcse_experiment() {
     echo "Running SimCSE-only batch_size=$batch_size, seed=$seed"
     
     # Create unique output directory
-    OUTPUT_DIR="models/confidence/simcse_only_batch_${batch_size}_seed_${seed}"
-    mkdir -p "$OUTPUT_DIR"
+    OUTPUT_DIR="models/confidence/simcse_only_batch_${batch_size}_seed_${seed}.pt"
     
     # Run the training
     python multitask_classifier.py \
@@ -112,8 +110,7 @@ run_sbert_experiment() {
     echo "Running SBERT-only batch_size=$batch_size, seed=$seed"
     
     # Create unique output directory
-    OUTPUT_DIR="models/confidence/sbert_only_batch_${batch_size}_seed_${seed}"
-    mkdir -p "$OUTPUT_DIR"
+    OUTPUT_DIR="models/confidence/sbert_only_batch_${batch_size}_seed_${seed}.pt"
     
     # Run the training
     python multitask_classifier.py \
@@ -140,48 +137,31 @@ export -f run_simcse_experiment
 export -f run_sbert_experiment
 
 # Run experiments in parallel using GNU parallel if available
-# Otherwise, use nested loops
-if command -v parallel &> /dev/null; then
-    echo "Using GNU parallel for parallel execution"
-    
-    # Run simcse-sbert experiments
-    echo "Running simcse-sbert experiments..."
-    parallel -j 4 run_simcse-sbert_experiment ::: "${ALPHAS[@]}" ::: "${SEEDS[@]}"
-    
-    # Run SimCSE-only experiments
-    echo "Running SimCSE-only experiments..."
-    parallel -j 4 run_simcse_experiment ::: "${BATCH_SIZES_SIMCSE[@]}" ::: "${SEEDS[@]}"
-    
-    # Run SBERT-only experiments
-    echo "Running SBERT-only experiments..."
-    parallel -j 4 run_sbert_experiment ::: "${BATCH_SIZES_SBERT[@]}" ::: "${SEEDS[@]}"
-    
-else
-    echo "GNU parallel not found, running sequentially"
-    
-    # Run simcse-sbert experiments
-    echo "Running simcse-sbert experiments..."
-    for alpha in "${ALPHAS[@]}"; do
-        for seed in "${SEEDS[@]}"; do
-            run_simcse-sbert_experiment "$alpha" "$seed"
-        done
+
+echo "GNU parallel not found, running sequentially"
+
+# Run simcse-sbert experiments
+echo "Running simcse-sbert experiments..."
+for alpha in "${ALPHAS[@]}"; do
+    for seed in "${SEEDS[@]}"; do
+        run_simcse-sbert_experiment "$alpha" "$seed"
     done
-    
-    # Run SimCSE-only experiments
-    echo "Running SimCSE-only experiments..."
-    for batch_size in "${BATCH_SIZES_SIMCSE[@]}"; do
-        for seed in "${SEEDS[@]}"; do
-            run_simcse_experiment "$batch_size" "$seed"
-        done
+done
+
+# Run SimCSE-only experiments
+echo "Running SimCSE-only experiments..."
+for batch_size in "${BATCH_SIZES_SIMCSE[@]}"; do
+    for seed in "${SEEDS[@]}"; do
+        run_simcse_experiment "$batch_size" "$seed"
     done
-    
-    # Run SBERT-only experiments
-    echo "Running SBERT-only experiments..."
-    for batch_size in "${BATCH_SIZES_SBERT[@]}"; do
-        for seed in "${SEEDS[@]}"; do
-            run_sbert_experiment "$batch_size" "$seed"
-        done
+done
+
+# Run SBERT-only experiments
+echo "Running SBERT-only experiments..."
+for batch_size in "${BATCH_SIZES_SBERT[@]}"; do
+    for seed in "${SEEDS[@]}"; do
+        run_sbert_experiment "$batch_size" "$seed"
     done
-fi
+done
 
 echo "All parameter sweeps with 25 seeds completed!"
