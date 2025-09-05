@@ -46,14 +46,7 @@ run_simcse-sbert_experiment() {
     
     echo "Running simcse-sbert alpha=$alpha, seed=$seed"
     
-    OUTPUT_DIR="models/confidence_test/simcse_sbert_alpha_${alpha}_seed_${seed}"
-    mkdir -p "$OUTPUT_DIR"
-    
-    # Test if directory was created successfully
-    if [ ! -d "$OUTPUT_DIR" ]; then
-        echo "ERROR: Could not create output directory $OUTPUT_DIR"
-        return 1
-    fi
+    OUTPUT_FILE="models/confidence_test/simcse_sbert_alpha_${alpha}_seed_${seed}"
     
     # REDUCED: max_batches=1, epochs=1, smaller batch size
     python multitask_classifier.py \
@@ -71,7 +64,7 @@ run_simcse-sbert_experiment() {
         --alpha "$alpha" \
         --seed "$seed" \
         --use_gpu \
-        --filepath "$OUTPUT_DIR"
+        --filepath "$OUTPUT_FILE"
     
     echo "Completed simcse-sbert alpha=$alpha, seed=$seed"
 }
@@ -82,13 +75,7 @@ run_simcse_experiment() {
     
     echo "Running SimCSE-only batch_size=$batch_size, seed=$seed"
     
-    OUTPUT_DIR="models/confidence_test/simcse_only_batch_${batch_size}_seed_${seed}"
-    mkdir -p "$OUTPUT_DIR"
-    
-    if [ ! -d "$OUTPUT_DIR" ]; then
-        echo "ERROR: Could not create output directory $OUTPUT_DIR"
-        return 1
-    fi
+    OUTPUT_FILE="models/confidence_test/simcse_only_batch_${batch_size}_seed_${seed}"
     
     # REDUCED: max_batches=1, epochs=1
     python multitask_classifier.py \
@@ -105,7 +92,7 @@ run_simcse_experiment() {
         --lr 3e-5 \
         --seed "$seed" \
         --use_gpu \
-        --filepath "$OUTPUT_DIR"
+        --filepath "$OUTPUT_FILE"
     
     echo "Completed SimCSE-only batch_size=$batch_size, seed=$seed"
 }
@@ -116,13 +103,7 @@ run_sbert_experiment() {
     
     echo "Running SBERT-only batch_size=$batch_size, seed=$seed"
     
-    OUTPUT_DIR="models/confidence_test/sbert_only_batch_${batch_size}_seed_${seed}"
-    mkdir -p "$OUTPUT_DIR"
-    
-    if [ ! -d "$OUTPUT_DIR" ]; then
-        echo "ERROR: Could not create output directory $OUTPUT_DIR"
-        return 1
-    fi
+    OUTPUT_FILE="models/confidence_test/sbert_only_batch_${batch_size}_seed_${seed}"
     
     # REDUCED: max_batches=1, epochs=1
     python multitask_classifier.py \
@@ -139,7 +120,7 @@ run_sbert_experiment() {
         --batch_size 8 \
         --use_gpu \
         --seed "$seed" \
-        --filepath "$OUTPUT_DIR"
+        --filepath "$OUTPUT_FILE"
     
     echo "Completed SBERT-only batch_size=$batch_size, seed=$seed"
 }
