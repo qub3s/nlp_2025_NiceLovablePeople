@@ -10,7 +10,25 @@
 #SBATCH --output=./slurm_files/sts_test-%x-%j.out
 #SBATCH --error=./slurm_files/sts_test-%x-%j.err
 
-# ... rest of the header remains the same ...
+module load miniforge3
+eval "$(conda shell.bash hook)"
+conda activate dnlp
+
+# Printing out some info.
+echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
+echo "Home directory: ${HOME}"
+echo "Working directory: $PWD"
+echo "Current node: ${SLURM_NODELIST}"
+
+# For debugging purposes.
+python --version
+python -m torch.utils.collect_env 2> /dev/null
+
+# Print out some git info.
+module load git
+echo -e "\nCurrent Branch: $(git rev-parse --abbrev-ref HEAD)"
+echo "Latest Commit: $(git rev-parse --short HEAD)"
+echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # DRAMATICALLY REDUCED PARAMETERS FOR TESTING
 ALPHAS=(0.0 0.5 1.0)  # Only 3 alpha values
