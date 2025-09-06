@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=run_all
-#SBATCH -t 00:40:00                  # estimated time # TODO: adapt to your needs
+#SBATCH -t 01:45:00                  # estimated time # TODO: adapt to your needs
 #SBATCH -p grete:shared              # the partition you are training on (i.e., which nodes), for nodes see sinfo -p grete:shared --format=%N,%G
 #SBATCH -G A100:1                    # take 1 GPU, see https://docs.hpc.gwdg.de/compute_partitions/gpu_partitions/index.html for more options
 #SBATCH --mem-per-gpu=8G             # setting the right constraints for the splitted gpu partitions
@@ -42,7 +42,7 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # QQP
 echo -e "\nStarting QQP\n"
-python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=3 --lr 1e-3
+python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=3 --lr 1e-3 --batch_size 32
 
 # PTD-Bert
 #echo -e "\nStarting PTD-Bert\n"
@@ -58,3 +58,9 @@ python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_d
 
 
 
+###! SLURM FILES ###
+"""
+10765022 = different init (05.09)
+10764995 = reference part 1
+
+"""
