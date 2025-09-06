@@ -26,7 +26,7 @@ from optimizer import AdamW
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 
-from sentiwordnet_processor import SentiWordNetProcessor, SentiWordNetProcessor_NegHandling, SentiWordNetProcessor_NegHandling_withVADER
+from sentiwordnet_processor import SentiWordNetProcessor, SentiWordNetProcessor_NegHandling, VADERProcessor
 
 TQDM_DISABLE = False
 
@@ -46,7 +46,8 @@ BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
 
-swn_processor = SentiWordNetProcessor_NegHandling_withVADER()
+swn_processor = SentiWordNetProcessor_NegHandling()
+vader_processor = VADERProcessor()
 
 
 class MultitaskBERT(nn.Module):
@@ -80,7 +81,7 @@ class MultitaskBERT(nn.Module):
         # self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
         # self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
         
-        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 9, N_SENTIMENT_CLASSES) # [768+9] -> 5 # HS: 9 extra features from SWN and VADER
+        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 3, N_SENTIMENT_CLASSES) # [768+3] -> 5 # HS: 3 extra features from VADER
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
         self.swn_gate = nn.Sequential( # Gate to combine BERT and SWN features with dynamic weights
@@ -139,8 +140,31 @@ class MultitaskBERT(nn.Module):
         
         # Return raw logits for MSE
         return logits
-        
+
     def predict_sentiment(self, input_ids, attention_mask, sentences):
+        
+        h_cls = self.forward(input_ids, attention_mask)
+    
+        vader_features = []
+        for sentence in sentences:
+            vader_pos, vader_neg, vader_neutral, vader_compound = vader_processor.get_scores(sentence)
+            vader_features.append([vader_pos, vader_neg, vader_compound])
+
+        vader_tensor = torch.tensor(vader_features, dtype=torch.float32, device=h_cls.device)
+
+        combined_features = torch.cat([h_cls, vader_tensor], dim=1)
+        
+        combined_features = self.sentiment_dropout(combined_features) # HS: dropout before final layer
+        logits = self.sentiment_classifier(combined_features) ## Final logits for 5 classes
+        return logits
+
+
+
+
+
+
+
+    def predict_sentiment__ASDASDASD(self, input_ids, attention_mask, sentences):
         """
         Given a batch of sentences, outputs logits for classifying sentiment.
         There are 5 sentiment classes:
@@ -167,13 +191,15 @@ class MultitaskBERT(nn.Module):
         swn_features = []
         vader_features = []
         for sentence in sentences:
-            avg_pos_score, avg_neg_score, avg_obj_score, vader_pos, vader_neg, vader_neutral, vader_compound = swn_processor.get_scores(sentence)
+            avg_pos_score, avg_neg_score, avg_obj_score = swn_processor.get_scores(sentence)
             # Engineer more expressive features from positive and negative scores
             sentiment_strength = avg_pos_score + avg_neg_score  # How strong the sentiment is
             sentiment_ratio = avg_pos_score / (avg_neg_score + 1e-8) if avg_neg_score > 0 else 10  # Pos/Neg ratio
             net_sentiment = avg_pos_score - avg_neg_score  # Net sentiment score
             
             swn_features.append([avg_pos_score, avg_neg_score, sentiment_strength, sentiment_ratio, net_sentiment])
+
+            vader_pos, vader_neg, vader_neutral, vader_compound = vader_processor.get_scores(sentence)
             vader_features.append([vader_pos, vader_neg, vader_neutral, vader_compound])
 
         swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=h_cls.device)

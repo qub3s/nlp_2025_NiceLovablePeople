@@ -296,7 +296,7 @@ Architecture: (768+5) → 256 → 2
 
 The bert_weight is multiplied element-wise to 768 BERT features, and the swn_weight is multiplied element-wise to the 5 SWN features before all are concatenated and mapped to the classification head.
 
-Lastly, instead of a sigmoid function, a softmax was also tried to make the weights sum up to 1.0 but it reduced dev accuracy so sigmoid was chosen at the end.
+Lastly, instead of a sigmoid function, a softmax was also tried to make the weights sum up to 1.0 but it reduced dev accuracy slightly so sigmoid was chosen at the end. The sigmoid gives a 0-1 weight for each of BERT and SWN independent of each other.
 
 
 

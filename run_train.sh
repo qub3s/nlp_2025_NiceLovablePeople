@@ -34,7 +34,7 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 # Run the script:
 # SST
 echo -e "\nStarting SST\n"
-python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.20 --epochs 25 --batch_size 64 --lr 1e-6
+python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.20 --epochs 10 --batch_size 64 --lr 1e-5
 
 
 
