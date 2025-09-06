@@ -519,10 +519,8 @@ def train_multitask(args):
                 
                 optimizer.zero_grad()
 
-                # 1. Holen Sie die Embeddings für MNRL-style Contrastive Learning
                 u, v = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2, return_embeddings=True)
 
-                # 2. Contrastive Loss berechnen (wie zuvor)
                 u_norm = F.normalize(u, p=2, dim=1)
                 v_norm = F.normalize(v, p=2, dim=1)
                 similarity_matrix = torch.mm(u_norm, v_norm.T)
@@ -531,13 +529,10 @@ def train_multitask(args):
                 labels = torch.arange(similarity_matrix.size(0)).to(similarity_matrix.device)
                 contrastive_loss = F.cross_entropy(similarity_matrix, labels)
 
-                # 3. HOLEN SIE AUCH DIE LOGITS FÜR DEN KLASSIKATOR
                 logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2, return_embeddings=False)
 
-                # 4. Binary Cross-Entropy Loss für Klassifikation berechnen
                 cls_loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
 
-                # 5. KOMBINATION BEIDER LOSSES (Hyperparameter anpassbar)
                 total_loss = cls_loss + 0.1 * contrastive_loss  # Contrastive Loss als Regularizer
 
                 if config.option == "finetune":
