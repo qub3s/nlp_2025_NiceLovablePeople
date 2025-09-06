@@ -952,6 +952,10 @@ def train_multitask(args):
 
     np.savez(metrics_filename, **metrics)
     print(f"Saved metrics to {metrics_filename}")
+
+
+    if args.task == "sts":
+        return sts_dev_corr
     
     
 def test_model(args):
@@ -1195,16 +1199,19 @@ def main():
     
     seed_everything(args.seed)
     
-    # Run training and get the final correlation
-    correlation = train_multitask(args)
+    # Run training and get the final correlation for STS task
+    if args.task == "sts":
+        correlation = train_multitask(args)
+    else:
+        train_multitask(args)  # For other tasks, just train without return value
     
     # If we're doing a parameter sweep, save results instead of model
-    if hasattr(args, 'save_results_only') and args.save_results_only:
+    if hasattr(args, 'save_results_only') and args.save_results_only and args.task == "sts":
         # Create results directory
         os.makedirs("sts_sweep_results", exist_ok=True)
         
         # Create descriptive filename with task type
-        filename_parts = [args.sts_training_type]  # This will be "simcse_sbert", "simcse", or "sbert"
+        filename_parts = [args.sts_training_type]
         filename_parts.append(f"seed_{args.seed}")
         
         if hasattr(args, 'alpha') and args.alpha is not None:
@@ -1220,7 +1227,7 @@ def main():
         # Save results to text file
         with open(filepath, 'w') as f:
             f.write(f"Task: {args.task}\n")
-            f.write(f"Training type: {args.sts_training_type}\n")  # This shows the method
+            f.write(f"Training type: {args.sts_training_type}\n")
             f.write(f"Seed: {args.seed}\n")
             f.write(f"Epochs: {args.epochs}\n")
             f.write(f"Learning rate: {args.lr}\n")
