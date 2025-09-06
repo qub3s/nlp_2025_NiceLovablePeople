@@ -215,6 +215,8 @@ The 3 scores always sum to 1.0 for each synset.
 
 These scores enrich the input space by telling the model the overall positivity or negativity of a sentence through a statistical approach. Keep in mind these scores completely ignore context and are word level features aggregated down to document-level. (Note: I used averaging for aggregation over summing because the latter would have given much more weight to longer sentences.)
 
+I initially used only positive and negative scores in my experiment. Adding objective score to the feature space reduced the dev accuracy slightly so ultimately decided to not use the objective score. It is unclear what the problem was because multi collinearity is not a problem for deep learning that is why usually more features are better. But somehow the objective score feature was adding noise to the model hurting accuracy so it was removed.
+
 Citation: SentiBERT: A Transferable Transformer-Based Architecture for Compositional Sentiment Semantics:
 https://aclanthology.org/2020.acl-main.341.pdf
 
@@ -314,7 +316,7 @@ Note: pos + neg + neu = 1.0 like the SWN scores
 
 Citation: https://www.researchgate.net/publication/381650914_Understanding_Sentiment_Analysis_with_VADER_A_Comprehensive_Overview_and_Application
 
-**Experiment:** VADER scores are a document-level (sentence-level) polarity scores which describe positivity or negativity in sentiment of a text. Implementation was a much simpler activity because all the skeleton for the SWN scores was already set up. A new class `VADERProcessor` was written to extract these scores. The "neutral" vader score was not used due to same reason avg_obj_score from SWN was ommitted. Additionally, the gating mechanism was altered to cater to this novel, third type of features in addition to BERT and SWN. 
+**Experiment:** The Valence Aware Dictionary and sEntiment Reasoner (VADER) scores are a document-level (sentence-level) polarity scores which describe positivity or negativity in sentiment of a text. Implementation was a much simpler activity because all the skeleton for the SWN scores was already set up. A new class `VADERProcessor` was written to extract these scores. The "neutral" vader score was not used due to same reason avg_obj_score from SWN was ommitted. Additionally, the gating mechanism was altered to cater to this novel, third type of features in addition to BERT and SWN. 
 
 NEW Gating mechanism Architecture: (768+8) → 256 → 3
 
