@@ -127,8 +127,8 @@ class MultitaskBERT(nn.Module):
 
         
         # QQP
-        self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
-        self.paraphrase_classifier = nn.Dropout(config.hidden_dropout_prob)
+        self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)  # Separate Dropout Instanz
+        self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)   
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -203,7 +203,7 @@ class MultitaskBERT(nn.Module):
         input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
         attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
         mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
-        return self.paraphrase_classifier(mean_embedding)
+        return self.paraphrase_classifier(mean_embedding).squeeze(-1)
     
 
     def predict_paraphrase_types(
