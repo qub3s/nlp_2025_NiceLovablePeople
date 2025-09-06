@@ -137,8 +137,8 @@ class MultitaskBERT(nn.Module):
 
         
         # QQP
-        self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)  # Separate Dropout Instanz
-        self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)   
+        # self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)  # Separate Dropout Instanz
+        # self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)   
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
