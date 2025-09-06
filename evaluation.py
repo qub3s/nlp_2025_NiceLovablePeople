@@ -59,12 +59,16 @@ def model_eval_multitask(
                 b_mask2 = b_mask2.to(device)
 
                 logits = model.predict_paraphrase(b_ids1, b_mask1, b_ids2, b_mask2)
-                y_hat = logits.sigmoid().round().flatten().cpu().numpy()
+                y_hat = logits.sigmoid().round().squeeze().cpu().numpy()
                 b_labels = b_labels.flatten().cpu().numpy()
 
                 quora_y_pred.extend(y_hat)
                 quora_y_true.extend(b_labels)
                 quora_sent_ids.extend(b_sent_ids)
+                print("logits shape:", logits.shape)
+                print("y_hat shape:", y_hat.shape)
+                print("b_labels shape:", b_labels.shape)
+                
         if task == "qqp" or task == "multitask":
             quora_accuracy = np.mean(np.array(quora_y_pred) == np.array(quora_y_true))
         else:
