@@ -268,12 +268,12 @@ class VADERProcessor:
         self.vader_analyzer = SentimentIntensityAnalyzer()
         
     def get_vader_scores(self, sentence):
-        """Get VADER sentiment scores for each sentence. Its a dictionary with pos, neg, neu, compound scores."""
+        # Get VADER sentiment scores for each sentence. Its a dictionary with pos, neg, neu, compound scores (4 total)
         vader_scores = self.vader_analyzer.polarity_scores(sentence)
         return vader_scores['pos'], vader_scores['neg'], vader_scores['neu'], vader_scores['compound']
     
     def get_scores(self, sentence):
-        """Calculate SentiWordNet scores for a sentence"""
+        # Calculate SentiWordNet scores for a sentence
         vader_pos, vader_neg, vader_neutral, vader_compound = self.get_vader_scores(sentence)
         return vader_pos, vader_neg, vader_neutral, vader_compound        
 
