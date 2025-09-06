@@ -486,6 +486,7 @@ def train_multitask(args):
 
         # QQP training
         if args.task == "qqp" or args.task == "multitask":
+            batch_idx = 0
             for batch in tqdm(
                 quora_train_dataloader, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
             ):
@@ -513,6 +514,8 @@ def train_multitask(args):
 
                 train_loss += loss.item()
                 num_batches += 1
+                if batch_idx >= config.max_batches and config.max_batches > 0:    
+                    break
         
         ## BONUS TASK
         # etpc training
@@ -667,7 +670,7 @@ def get_args():
     parser.add_argument("--alpha", type=float, default=0.5, help="Weight for SimCSE loss in combined training")
 
     # NEW: Max Batches
-    parser.add_argument("--max_batches", type=float, default=180, help="Number of batches tro train on (for STS task only)")
+    parser.add_argument("--max_batches", type=float, default=0, help="Number of batches tro train on (for STS task only)")
 
     # NEW: Add warmup ratio argument
     parser.add_argument("--warmup_ratio", type=float, default=0.1, help="Percentage of total steps for warmup (0.1 = 10%)")
