@@ -32,29 +32,29 @@ echo "Latest Commit: $(git rev-parse --short HEAD)"
 echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
-# SST
-echo -e "\nStarting SST\n"
-python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.25 --epochs=6
+# # SST
+# echo -e "\nStarting SST\n"
+# python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.25 --epochs=6
 
-# STS
-echo -e "\nStarting STS\n"
-python -u multitask_classifier.py --use_gpu --option finetune --task sts --hidden_dropout_prob 0.25 --epochs=10
+# # STS
+# echo -e "\nStarting STS\n"
+# python -u multitask_classifier.py --use_gpu --option finetune --task sts --hidden_dropout_prob 0.25 --epochs=10
 
 # QQP
 echo -e "\nStarting QQP\n"
-python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=1
+python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=1 --use_pretrained_simcse --simcse_model_path
 
-# PTD-Bert
-echo -e "\nStarting PTD-Bert\n"
-python -u multitask_classifier.py --use_gpu --option finetune --task etpc --hidden_dropout_prob 0.25 --epochs=20 --lr 1e-6 --batch_size 16
+# # PTD-Bert
+# echo -e "\nStarting PTD-Bert\n"
+# python -u multitask_classifier.py --use_gpu --option finetune --task etpc --hidden_dropout_prob 0.25 --epochs=20 --lr 1e-6 --batch_size 16
 
-# Paraphrase Type Detection
-echo -e "\nStarting PTD\n"
-python bart_detection.py --use_gpu
+# # Paraphrase Type Detection
+# echo -e "\nStarting PTD\n"
+# python bart_detection.py --use_gpu
 
-# Paraphrase Generation
-echo -e "\nStarting PG\n"
-python -u bart_generation.py --use_gpu
+# # Paraphrase Generation
+# echo -e "\nStarting PG\n"
+# python -u bart_generation.py --use_gpu
 
 
 

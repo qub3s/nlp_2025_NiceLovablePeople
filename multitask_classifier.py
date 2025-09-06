@@ -53,12 +53,51 @@ class MultitaskBERT(nn.Module):
     (- Paraphrase type detection (predict_paraphrase_types))
     """
 
+
     def __init__(self, config):
         super(MultitaskBERT, self).__init__()
-        self.bert = BertModel.from_pretrained(
-            "bert-base-uncased", local_files_only=config.local_files_only
-        )
 
+        self.config = config
+
+        # Load pre-tuned SimCSE model or base BERT
+        if config.use_pretrained_simcse:
+            print(f"Loading pretrained SimCSE model from: {config.simcse_model_path}")
+            
+            state_dict = torch.load(config.simcse_model_path, map_location='cpu')
+            
+            # Show model structure
+            print(f"Model contains {len(state_dict)} parameters")
+            bert_keys = [k for k in state_dict.keys() if k.startswith('bert.')]
+            print(f"Found {len(bert_keys)} BERT parameters")
+            
+            # Initialize with base BERT
+            self.bert = BertModel.from_pretrained(
+                "bert-base-uncased",
+                local_files_only=config.local_files_only
+            )
+            
+            # Extract BERT weights
+            bert_state_dict = {}
+            for key, value in state_dict.items():
+                if key.startswith('bert.'):
+                    new_key = key[5:]  # Remove 'bert.' prefix
+                    bert_state_dict[new_key] = value
+            
+            # Load the BERT weights
+            if bert_state_dict:
+                missing_keys, unexpected_keys = self.bert.load_state_dict(bert_state_dict, strict=False)
+                print(f"Successfully loaded BERT weights")
+                print(f"Missing keys: {len(missing_keys)}")
+                print(f"Unexpected keys: {len(unexpected_keys)}")
+            else:
+                print("Warning: No BERT weights found in SimCSE model.")
+                
+        else:
+            self.bert = BertModel.from_pretrained(
+                "bert-base-uncased",
+                local_files_only=config.local_files_only
+            )
+        
         # Freeze BERT parameters in pretrain mode
         for param in self.bert.parameters():
             if config.option == "pretrain":
@@ -75,9 +114,18 @@ class MultitaskBERT(nn.Module):
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
         # STS Regression Head
-        self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
+        if config.regressor_type == "simple":
+            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
+            self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
 
+        elif config.regressor_type == "complex":
+            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
+            self.sts_regressor = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE * 3, 512), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob), nn.Linear(512, 256), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob),nn.Linear(256, 1))
+
+        elif config.regressor_type == "sbert":
+            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        
         # QQP
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
         self.paraphrase_classifier = nn.Dropout(config.hidden_dropout_prob)
@@ -85,6 +133,7 @@ class MultitaskBERT(nn.Module):
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
+        
         
            
 
@@ -343,6 +392,8 @@ def train_multitask(args):
         "data_dir": ".",
         "option": args.option,
         "local_files_only": args.local_files_only,
+        "simcse_model_path": args.simcse_model_path,
+        "use_pretrained_simcse": args.use_pretrained_simcse,
     }
     config = SimpleNamespace(**config)
 
@@ -553,6 +604,13 @@ def test_model(args):
 
 def get_args():
     parser = argparse.ArgumentParser()
+    
+    # new model
+    parser.add_argument("--use_pretrained_simcse", action="store_true", 
+                       help="Use pre-trained SimCSE model instead of base BERT")
+    parser.add_argument("--simcse_model_path", type=str, default="models/simcse_supervised/best_model_epoch3_corr0.8216.pt",
+                       help="Path to your pre-trained SimCSE model")
+    
     # Training task
     parser.add_argument(
         "--task",
@@ -561,7 +619,6 @@ def get_args():
         choices=("sst", "sts", "qqp", "etpc", "multitask"),
         default="sst",
     )
-
     # Model configuration
     parser.add_argument("--seed", type=int, default=11711)
     parser.add_argument("--epochs", type=int, default=10)  
