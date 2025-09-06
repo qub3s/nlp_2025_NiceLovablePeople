@@ -394,6 +394,7 @@ def train_multitask(args):
         "local_files_only": args.local_files_only,
         "simcse_model_path": args.simcse_model_path,
         "use_pretrained_simcse": args.use_pretrained_simcse,
+        "regressor_type": args.regressor_type,
     }
     config = SimpleNamespace(**config)
 
@@ -604,8 +605,8 @@ def test_model(args):
 
 def get_args():
     parser = argparse.ArgumentParser()
-    
-    # new model
+
+    # Which model to load
     parser.add_argument("--use_pretrained_simcse", action="store_true", 
                        help="Use pre-trained SimCSE model instead of base BERT")
     parser.add_argument("--simcse_model_path", type=str, default="models/simcse_supervised/best_model_epoch3_corr0.8216.pt",
@@ -619,6 +620,7 @@ def get_args():
         choices=("sst", "sts", "qqp", "etpc", "multitask"),
         default="sst",
     )
+
     # Model configuration
     parser.add_argument("--seed", type=int, default=11711)
     parser.add_argument("--epochs", type=int, default=10)  
@@ -631,8 +633,67 @@ def get_args():
     )
     parser.add_argument("--use_gpu", action="store_true")
 
+    # NEW: Regressor type agument
+    parser.add_argument(
+        "--regressor_type",
+        type=str,
+        help="Type of regressor to use: simple or complex",
+        choices=("simple", "complex", "sbert"),
+        default="simple",
+    )
+
+    # NEW: Add forward function type argument
+    parser.add_argument(
+        "--forward_type",
+        type=str,
+        help="Type of forward function: pooler or raw_cls",
+        choices=("pooler", "raw_cls", "sbert_mean", "simcse_sbert"),
+        default="raw_cls",
+    )
+
+    # NEW: Add STS training type argument
+    parser.add_argument(
+        "--sts_training_type",
+        type=str,
+        help="Type of STS training",
+        choices=("standard", "sbert", "simcse", "simcse_sbert"),
+        default="pooler",
+    )
+    # NEW: Save only correlation values
+    parser.add_argument("--save_results_only", action="store_true",
+                       help="Save only results to text file instead of full model")
+
+    # NEW: Add alpha value
+    parser.add_argument("--alpha", type=float, default=0.5, help="Weight for SimCSE loss in combined training")
+
+    # NEW: Max Batches
+    parser.add_argument("--max_batches", type=float, default=180, help="Number of batches tro train on (for STS task only)")
+
+    # NEW: Add warmup ratio argument
+    parser.add_argument("--warmup_ratio", type=float, default=0.1, help="Percentage of total steps for warmup (0.1 = 10%)")
+
+    # Hyperparameters - MOVE THESE UP before the parse_known_args() call
+    parser.add_argument(
+        "--batch_size", help="sst: 64 can fit a 12GB GPU", type=int, default=64
+    )
+    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
+    parser.add_argument(
+        "--lr",
+        type=float,
+        help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
+        default=1e-5,  # Set a default, we'll update it later
+    )
+    parser.add_argument("--local_files_only", action="store_true")
+
+    # Parse known args to get the option for conditional defaults
     args, _ = parser.parse_known_args()
-    print(f"args: {args}")
+    
+    # Update lr default based on option
+    if args.option == "pretrain":
+        parser.set_defaults(lr=1e-3)
+    else:
+        parser.set_defaults(lr=1e-5)
+
     # Dataset paths
     parser.add_argument("--sst_train", type=str, default="data/sst-sentiment-train.csv")
     parser.add_argument("--sst_dev", type=str, default="data/sst-sentiment-dev.csv")
@@ -748,20 +809,21 @@ def get_args():
         ),
     )
 
-    # Hyperparameters
+    # Filepath argument - add this at the end
     parser.add_argument(
-        "--batch_size", help="sst: 64 can fit a 12GB GPU", type=int, default=64
+        "--filepath", 
+        type=str, 
+        default=None,  # Set to None initially
+        help="Path to save/load the model"
     )
-    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
-    parser.add_argument(
-        "--lr",
-        type=float,
-        help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
-        default=1e-3 if args.option == "pretrain" else 1e-5,
-    )
-    parser.add_argument("--local_files_only", action="store_true")
 
+    # Parse all arguments
     args = parser.parse_args()
+    
+    # # Now calculate default_filepath using the parsed values
+    # if args.filepath is None:
+    #     args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
+    
     return args
 
 
