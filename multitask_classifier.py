@@ -395,6 +395,7 @@ def train_multitask(args):
         "simcse_model_path": args.simcse_model_path,
         "use_pretrained_simcse": args.use_pretrained_simcse,
         "regressor_type": args.regressor_type,
+        "max_batches": args.max_batches,
     }
     config = SimpleNamespace(**config)
 
