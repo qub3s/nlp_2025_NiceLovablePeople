@@ -122,8 +122,9 @@ class MultitaskBERT(nn.Module):
         # (e.g., by adding other layers).
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         if args.task == "qqp":
+            embeddings = self.mean_pooling(outputs, attention_mask)
             embeddings = nn.functional.layer_norm(embeddings, normalized_shape=embeddings.size()[1:])
-            return self.mean_pooling(outputs, attention_mask)
+            return embeddings
         
         return outputs["pooler_output"] 
     
