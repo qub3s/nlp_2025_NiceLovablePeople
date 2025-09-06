@@ -26,8 +26,7 @@ from optimizer import AdamW
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 
-from sentiwordnet_processor import SentiWordNetProcessor, SentiWordNetProcessor_NegHandling
-
+from sentiwordnet_processor import SentiWordNetProcessor, SentiWordNetProcessor_NegHandling, SentiWordNetProcessor_NegHandling_withVADER
 
 TQDM_DISABLE = False
 
@@ -47,7 +46,7 @@ BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
 
-swn_processor = SentiWordNetProcessor_NegHandling()
+swn_processor = SentiWordNetProcessor_NegHandling_withVADER()
 
 
 class MultitaskBERT(nn.Module):
@@ -81,14 +80,14 @@ class MultitaskBERT(nn.Module):
         # self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
         # self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
         
-        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 5, N_SENTIMENT_CLASSES) # [768+5] -> 5 # HS: 5 extra features from SWN
+        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 9, N_SENTIMENT_CLASSES) # [768+9] -> 5 # HS: 9 extra features from SWN and VADER
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
         self.swn_gate = nn.Sequential( # Gate to combine BERT and SWN features with dynamic weights
-            nn.Linear(768 + 5, 256),  # h_cls + SWN features
+            nn.Linear(768 + 9, 256),  # h_cls + SWN features
             nn.ReLU(),
-            nn.Linear(256, 2),   
-            nn.Sigmoid())   # BERT_weight and SWN_weight
+            nn.Linear(256, 3),   
+            nn.Sigmoid())   # BERT_weight and SWN_weight and VADER_weight
 
         # STS Regression Head
         self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -166,28 +165,32 @@ class MultitaskBERT(nn.Module):
         h_cls = self.forward(input_ids, attention_mask)
     
         swn_features = []
+        vader_features = []
         for sentence in sentences:
-            avg_pos_score, avg_neg_score, avg_obj_score = swn_processor.get_swn_scores(sentence)
+            avg_pos_score, avg_neg_score, avg_obj_score, vader_pos, vader_neg, vader_neutral, vader_compound = swn_processor.get_scores(sentence)
             # Engineer more expressive features from positive and negative scores
             sentiment_strength = avg_pos_score + avg_neg_score  # How strong the sentiment is
             sentiment_ratio = avg_pos_score / (avg_neg_score + 1e-8) if avg_neg_score > 0 else 10  # Pos/Neg ratio
             net_sentiment = avg_pos_score - avg_neg_score  # Net sentiment score
             
             swn_features.append([avg_pos_score, avg_neg_score, sentiment_strength, sentiment_ratio, net_sentiment])
+            vader_features.append([vader_pos, vader_neg, vader_neutral, vader_compound])
 
         swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=h_cls.device)
-        
+        vader_tensor = torch.tensor(vader_features, dtype=torch.float32, device=h_cls.device)
+
         # Gating system implementation ********************
-        gate_input = torch.cat([h_cls, swn_tensor], dim=1)
+        gate_input = torch.cat([h_cls, swn_tensor, vader_tensor], dim=1)
         
         gate_weights = self.swn_gate(gate_input)
         
-        bert_weight, swn_weight = gate_weights[:, 0].unsqueeze(1), gate_weights[:, 1].unsqueeze(1)      # swn_weight, bert_weight = gate_weights[:, 0:1], gate_weights[:, 1:2]
+        bert_weight, swn_weight, vader_weight = gate_weights[:, 0].unsqueeze(1), gate_weights[:, 1].unsqueeze(1),  gate_weights[:, 2].unsqueeze(1)     # swn_weight, bert_weight = gate_weights[:, 0:1], gate_weights[:, 1:2]
         
         bert_enriched = h_cls * bert_weight
         swn_enriched = swn_tensor * swn_weight
+        vader_enriched = vader_tensor * vader_weight
         # *************************************************
-        combined_features = torch.cat([bert_enriched, swn_enriched], dim=1)
+        combined_features = torch.cat([bert_enriched, swn_enriched, vader_enriched], dim=1)
         
         combined_features = self.sentiment_dropout(combined_features) # HS: dropout before final layer
         logits = self.sentiment_classifier(combined_features) ## Final logits for 5 classes
