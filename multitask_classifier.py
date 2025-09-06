@@ -145,7 +145,18 @@ class MultitaskBERT(nn.Module):
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
         
         
-           
+    def mean_pooling(self, model_output, attention_mask):
+        """
+        Performs mean pooling on the token embeddings, taking into account the attention mask.
+        model_output: last_hidden_state from BERT
+        attention_mask: attention mask for the input
+        Returns: pooled sentence embedding of size [batch_size, hidden_size]
+        """
+        token_embeddings = model_output["last_hidden_state"]
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        return sum_embeddings / sum_mask
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
@@ -156,6 +167,11 @@ class MultitaskBERT(nn.Module):
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        if args.task == "qqp":
+            embeddings = self.mean_pooling(outputs, attention_mask)
+            embeddings = nn.functional.layer_norm(embeddings, normalized_shape=embeddings.size()[1:])
+            return embeddings
+        
         return outputs["pooler_output"] 
     
     def forward_etpc(self, input_ids, attention_mask):
@@ -201,7 +217,7 @@ class MultitaskBERT(nn.Module):
         # raise NotImplementedError
 
     def predict_paraphrase(
-        self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
+        self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2,return_embeddings
     ):
         """
         Given a batch of pairs of sentences, outputs a single logit for predicting whether they are paraphrases.
@@ -210,10 +226,21 @@ class MultitaskBERT(nn.Module):
         Dataset: Quora
         """
 
-        input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
-        attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
-        mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
-        return self.paraphrase_classifier(mean_embedding).squeeze(-1)
+        u = self.forward(input_ids_1, attention_mask_1)
+        v = self.forward(input_ids_2, attention_mask_2)
+
+        u = self.paraphrase_dropout(u)
+        v = self.paraphrase_dropout(v)
+
+        if return_embeddings:
+            # Für MNRL: Gib die Embeddings zurück, um sie im Loss zu vergleichen
+            return u, v
+
+        # Nur für Inferenz: Der originale Pfad zur Klassifikation
+        abs_diff = torch.abs(u - v)
+        combined_features = torch.cat([u, v, abs_diff], dim=-1)
+        logits = self.paraphrase_classifier(combined_features).squeeze(-1)
+        return logits
     
 
     def predict_paraphrase_types(
@@ -497,7 +524,6 @@ def train_multitask(args):
 
         # QQP training
         if args.task == "qqp" or args.task == "multitask":
-            batch_idx = 0
             for batch in tqdm(
                 quora_train_dataloader, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
             ):
@@ -514,19 +540,34 @@ def train_multitask(args):
                 b_ids_2 = b_ids_2.to(device)
                 b_mask_2 = b_mask_2.to(device)
                 b_labels = b_labels.to(device)
-
+                
+                
                 optimizer.zero_grad()
-                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-                loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
+
+                u, v = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2, return_embeddings=True)
+
+                u_norm = F.normalize(u, p=2, dim=1)
+                v_norm = F.normalize(v, p=2, dim=1)
+                similarity_matrix = torch.mm(u_norm, v_norm.T)
+                temperature = 0.05
+                similarity_matrix = similarity_matrix / temperature
+                labels = torch.arange(similarity_matrix.size(0)).to(similarity_matrix.device)
+                contrastive_loss = F.cross_entropy(similarity_matrix, labels)
+
+                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2, return_embeddings=False)
+
+                cls_loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
+
+                total_loss = cls_loss + 0.1 * contrastive_loss  # Contrastive Loss als Regularizer
 
                 if config.option == "finetune":
-                    loss.backward()
+                    total_loss.backward()
                     optimizer.step()
 
-                train_loss += loss.item()
+                train_loss += total_loss.item()
+                
                 num_batches += 1
-                batch_idx += 1
-                if batch_idx >= config.max_batches and config.max_batches > 0:    
+                if num_batches > 10 and args.fastEpoch:
                     break
         
         ## BONUS TASK
@@ -569,6 +610,7 @@ def train_multitask(args):
                 model=model,
                 device=device,
                 task=args.task,
+                fast=args.fastEpoch,
             )
         )
 
@@ -581,6 +623,7 @@ def train_multitask(args):
                 model=model,
                 device=device,
                 task=args.task,
+                fast=args.fastEpoch,
             )
         )
 
