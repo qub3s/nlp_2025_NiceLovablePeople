@@ -1023,6 +1023,9 @@ def get_args():
         choices=("standard", "sbert", "simcse", "simcse_sbert"),
         default="pooler",
     )
+    # NEW: Save only correlation values
+    parser.add_argument("--save_results_only", action="store_true",
+                       help="Save only results to text file instead of full model")
 
     # NEW: Add alpha value
     parser.add_argument("--alpha", type=float, default=0.5, help="Weight for SimCSE loss in combined training")
@@ -1181,18 +1184,72 @@ def get_args():
     # Parse all arguments
     args = parser.parse_args()
     
-    # Now calculate default_filepath using the parsed values
-    if args.filepath is None:
-        args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
+    # # Now calculate default_filepath using the parsed values
+    # if args.filepath is None:
+    #     args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
     
     return args
 
-if __name__ == "__main__":
+def main():
     args = get_args()
+    
+    seed_everything(args.seed)
+    
+    # Run training and get the final correlation
+    correlation = train_multitask(args)
+    
+    # If we're doing a parameter sweep, save results instead of model
+    if hasattr(args, 'save_results_only') and args.save_results_only:
+        # Create results directory
+        os.makedirs("sts_sweep_results", exist_ok=True)
+        
+        # Create descriptive filename with task type
+        filename_parts = [args.sts_training_type]  # This will be "simcse_sbert", "simcse", or "sbert"
+        filename_parts.append(f"seed_{args.seed}")
+        
+        if hasattr(args, 'alpha') and args.alpha is not None:
+            filename_parts.append(f"alpha_{args.alpha}")
+        
+        if hasattr(args, 'max_batches') and args.max_batches is not None:
+            filename_parts.append(f"batch_{args.max_batches}")
+        
+        filename_parts.append(f"corr_{correlation:.4f}")
+        filename = "_".join(filename_parts) + ".txt"
+        filepath = os.path.join("sts_sweep_results", filename)
+        
+        # Save results to text file
+        with open(filepath, 'w') as f:
+            f.write(f"Task: {args.task}\n")
+            f.write(f"Training type: {args.sts_training_type}\n")  # This shows the method
+            f.write(f"Seed: {args.seed}\n")
+            f.write(f"Epochs: {args.epochs}\n")
+            f.write(f"Learning rate: {args.lr}\n")
+            f.write(f"Batch size: {args.batch_size}\n")
+            
+            if hasattr(args, 'alpha') and args.alpha is not None:
+                f.write(f"Alpha: {args.alpha}\n")
+            
+            if hasattr(args, 'max_batches') and args.max_batches is not None:
+                f.write(f"Max batches: {args.max_batches}\n")
+            
+            f.write(f"Final correlation: {correlation:.4f}\n")
+            f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
+        
+        print(f"✓ Saved results to {filepath}")
+        print(f"✓ Final correlation: {correlation:.4f}")
+    else:
+        # Normal operation - test the model
+        test_model(args)
 
-    if not hasattr(args, 'filepath') or args.filepath is None:
-        args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
+if __name__ == "__main__":
+    main()
 
-    seed_everything(args.seed)  # fix the seed for reproducibility
-    train_multitask(args)
-    test_model(args)
+# if __name__ == "__main__":
+#     args = get_args()
+
+#     if not hasattr(args, 'filepath') or args.filepath is None:
+#         args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
+
+#     seed_everything(args.seed)  # fix the seed for reproducibility
+#     train_multitask(args)
+#     test_model(args)
