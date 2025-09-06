@@ -56,7 +56,7 @@ for alpha in "${ALPHAS[@]}"; do
             --use_pretrained_simcse \
             --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" \
             --max_batches 10 \
-            --epochs 10 \
+            --epochs 5 \
             --batch_size 64 \
             --lr 2e-5 \
             --alpha "$alpha" \
