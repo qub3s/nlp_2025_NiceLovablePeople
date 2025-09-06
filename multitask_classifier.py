@@ -203,7 +203,7 @@ class MultitaskBERT(nn.Module):
         input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
         attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
         mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
-        return self.paraphrase_classifier(mean_embedding).squeeze(-1)
+        return self.paraphrase_classifier(mean_embedding)
     
 
     def predict_paraphrase_types(

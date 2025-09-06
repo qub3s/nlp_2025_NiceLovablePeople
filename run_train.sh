@@ -7,7 +7,7 @@
 #SBATCH --nodes=1                    # total number of nodes
 #SBATCH --ntasks=1                   # total number of tasks
 #SBATCH --cpus-per-task=8            # number cores per task
-#SBATCH --mail-type=all              # send mail when job begins and ends
+#SBATCH --mail-type=None              # send mail when job begins and ends
 #SBATCH --output=./slurm_files/slurm-%x-%j.out     # where to write output, %x give job name, %j names job id
 #SBATCH --error=./slurm_files/slurm-%x-%j.err      # where to write slurm error
 
