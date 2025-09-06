@@ -39,9 +39,7 @@ SEEDS=(11711 11712 11713 11714 11715 11716 11717 11718 11719 11720
        11731 11732 11733 11734 11735)
 
 # Create results directory
-mkdir -p sts_sweep_results_20seeds
-
-echo "Starting parameter sweeps with 25 seeds..."
+echo "Starting parameter sweeps with 25 seeds"
 
 # Run simcse-sbert experiments
 echo "Running simcse-sbert experiments..."

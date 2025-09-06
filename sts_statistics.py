@@ -2,90 +2,42 @@ import numpy as np
 import pandas as pd
 import glob
 import os
-import json
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
-import torch
-from torch.utils.data import DataLoader
-from datasets import load_multitask_data, SentencePairDataset
-from multitask_classifier import MultitaskBERT  # Import your model class
-from evaluation import model_eval_multitask  # Import your evaluation function
+import re
 
-def load_model_and_evaluate(model_path, args, device):
+def extract_results_from_filenames(file_pattern="*.txt"):
     """
-    Load a saved model and evaluate it on STS dev set
-    """
-    # Load saved model
-    saved = torch.load(model_path, map_location=device)
-    config = saved["model_config"]
-    
-    # Initialize model
-    model = MultitaskBERT(config)
-    model.load_state_dict(saved["model"])
-    model = model.to(device)
-    model.eval()
-    
-    # Load STS dev data
-    _, _, _, sts_dev_data, _ = load_multitask_data(
-        args.sst_dev, args.quora_dev, args.sts_dev, args.etpc_dev, split="train"
-    )
-    
-    sts_dev_dataset = SentencePairDataset(sts_dev_data, args)
-    sts_dev_dataloader = DataLoader(
-        sts_dev_dataset,
-        shuffle=False,
-        batch_size=args.batch_size,
-        collate_fn=sts_dev_dataset.collate_fn,
-    )
-    
-    # Evaluate model
-    with torch.no_grad():
-        _, _, _, _, _, _, sts_dev_corr, _, _, _, _, _ = model_eval_multitask(
-            None, None, sts_dev_dataloader, None, model=model, device=device, task="sts"
-        )
-    
-    return sts_dev_corr
-
-def load_results_from_directory(base_dir="sts_sweep_results_25seeds", args=None):
-    """
-    Load all models from the sweep directory and evaluate them
+    Extract results from txt filenames containing correlation values
     """
     results = []
-    device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
+    files = glob.glob(file_pattern)
     
-    # Find all experiment directories
-    dirs = glob.glob(f"{base_dir}/alpha_*_seed_*")
-    
-    for dir_path in tqdm(dirs, desc="Evaluating models"):
+    for file_path in files:
         try:
-            # Extract parameters from directory name
-            dir_name = os.path.basename(dir_path)
-            parts = dir_name.split('_')
-            alpha = float(parts[1])
-            seed = int(parts[3])
+            filename = os.path.basename(file_path)
             
-            # Find model file
-            model_files = glob.glob(os.path.join(dir_path, "*.pt"))
-            if not model_files:
-                print(f"No model file found in {dir_path}")
-                continue
+            # Extract seed, alpha, and correlation using regex
+            pattern = r"seed_(\d+)_alpha_([\d.]+)_batch_[\d.]+_corr_([\d.]+)\.txt"
+            match = re.search(pattern, filename)
             
-            model_path = model_files[0]  # Take the first model file found
-            
-            # Evaluate model
-            correlation = load_model_and_evaluate(model_path, args, device)
-            
-            results.append({
-                'alpha': alpha,
-                'seed': seed,
-                'final_correlation': correlation,
-                'directory': dir_path,
-                'model_path': model_path
-            })
-            
+            if match:
+                seed = int(match.group(1))
+                alpha = float(match.group(2))
+                correlation = float(match.group(3))
+                
+                results.append({
+                    'alpha': alpha,
+                    'seed': seed,
+                    'correlation': correlation,
+                    'filename': filename
+                })
+            else:
+                print(f"Could not parse filename: {filename}")
+                
         except Exception as e:
-            print(f"Error processing {dir_path}: {e}")
+            print(f"Error processing {file_path}: {e}")
             continue
     
     return pd.DataFrame(results)
@@ -112,12 +64,12 @@ def analyze_alpha_performance(results_df):
     Analyze performance by alpha value with confidence intervals
     """
     analysis = results_df.groupby('alpha').agg({
-        'final_correlation': ['mean', 'std', 'count', 'min', 'max']
+        'correlation': ['mean', 'std', 'count', 'min', 'max']
     }).round(4)
     
     # Calculate confidence intervals
-    analysis['ci_lower'] = analysis[('final_correlation', 'mean')] - 1.96 * analysis[('final_correlation', 'std')] / np.sqrt(analysis[('final_correlation', 'count')])
-    analysis['ci_upper'] = analysis[('final_correlation', 'mean')] + 1.96 * analysis[('final_correlation', 'std')] / np.sqrt(analysis[('final_correlation', 'count')])
+    analysis['ci_lower'] = analysis[('correlation', 'mean')] - 1.96 * analysis[('correlation', 'std')] / np.sqrt(analysis[('correlation', 'count')])
+    analysis['ci_upper'] = analysis[('correlation', 'mean')] + 1.96 * analysis[('correlation', 'std')] / np.sqrt(analysis[('correlation', 'count')])
     
     return analysis
 
@@ -133,7 +85,7 @@ def create_alpha_visualizations(results_df, output_dir="alpha_analysis_plots"):
     # Plot 1: Alpha vs Correlation with confidence intervals
     plt.figure(figsize=(12, 8))
     
-    alpha_stats = results_df.groupby('alpha')['final_correlation'].agg(['mean', 'std', 'count'])
+    alpha_stats = results_df.groupby('alpha')['correlation'].agg(['mean', 'std', 'count'])
     alpha_stats['ci'] = 1.96 * alpha_stats['std'] / np.sqrt(alpha_stats['count'])
     
     plt.errorbar(alpha_stats.index, alpha_stats['mean'], yerr=alpha_stats['ci'], 
@@ -148,7 +100,7 @@ def create_alpha_visualizations(results_df, output_dir="alpha_analysis_plots"):
     
     # Plot 2: Distribution by alpha
     plt.figure(figsize=(14, 8))
-    sns.boxplot(data=results_df, x='alpha', y='final_correlation')
+    sns.boxplot(data=results_df, x='alpha', y='correlation')
     plt.xlabel('Alpha Value', fontsize=14)
     plt.ylabel('Pearson Correlation', fontsize=14)
     plt.title('Distribution of Correlation Scores by Alpha Value', fontsize=16)
@@ -158,12 +110,22 @@ def create_alpha_visualizations(results_df, output_dir="alpha_analysis_plots"):
     
     # Plot 3: Violin plot showing distribution
     plt.figure(figsize=(14, 8))
-    sns.violinplot(data=results_df, x='alpha', y='final_correlation')
+    sns.violinplot(data=results_df, x='alpha', y='correlation')
     plt.xlabel('Alpha Value', fontsize=14)
     plt.ylabel('Pearson Correlation', fontsize=14)
     plt.title('Distribution of Correlation Scores by Alpha Value', fontsize=16)
     plt.xticks(rotation=45)
     plt.savefig(f'{output_dir}/alpha_violin.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    # Plot 4: Individual points with jitter
+    plt.figure(figsize=(14, 8))
+    sns.stripplot(data=results_df, x='alpha', y='correlation', jitter=True, alpha=0.6)
+    plt.xlabel('Alpha Value', fontsize=14)
+    plt.ylabel('Pearson Correlation', fontsize=14)
+    plt.title('Individual Correlation Scores by Alpha Value', fontsize=16)
+    plt.xticks(rotation=45)
+    plt.savefig(f'{output_dir}/alpha_points.png', dpi=300, bbox_inches='tight')
     plt.close()
 
 def perform_statistical_tests(results_df):
@@ -173,7 +135,7 @@ def perform_statistical_tests(results_df):
     tests = {}
     
     # Test different alpha values
-    alpha_groups = [group['final_correlation'].values 
+    alpha_groups = [group['correlation'].values 
                    for _, group in results_df.groupby('alpha')]
     
     if len(alpha_groups) > 1:
@@ -187,8 +149,8 @@ def perform_statistical_tests(results_df):
         for i in range(len(alpha_values)):
             for j in range(i+1, len(alpha_values)):
                 alpha1, alpha2 = alpha_values[i], alpha_values[j]
-                group1 = results_df[results_df['alpha'] == alpha1]['final_correlation']
-                group2 = results_df[results_df['alpha'] == alpha2]['final_correlation']
+                group1 = results_df[results_df['alpha'] == alpha1]['correlation']
+                group2 = results_df[results_df['alpha'] == alpha2]['correlation']
                 
                 if len(group1) > 1 and len(group2) > 1:  # Need at least 2 samples
                     t_stat, p_val = stats.ttest_ind(group1, group2)
@@ -217,7 +179,7 @@ def create_detailed_report(results_df, output_file="alpha_analysis_report.md"):
         "|-------|------------------|---------|-------|--------------|--------------|"
     ]
     
-    alpha_stats = results_df.groupby('alpha')['final_correlation'].agg(['mean', 'std', 'count'])
+    alpha_stats = results_df.groupby('alpha')['correlation'].agg(['mean', 'std', 'count'])
     alpha_stats['ci_lower'] = alpha_stats['mean'] - 1.96 * alpha_stats['std'] / np.sqrt(alpha_stats['count'])
     alpha_stats['ci_upper'] = alpha_stats['mean'] + 1.96 * alpha_stats['std'] / np.sqrt(alpha_stats['count'])
     
@@ -225,8 +187,8 @@ def create_detailed_report(results_df, output_file="alpha_analysis_report.md"):
         report.append(f"| {alpha} | {row['mean']:.4f} | {row['std']:.4f} | {int(row['count'])} | {row['ci_lower']:.4f} | {row['ci_upper']:.4f} |")
     
     # Best performing alpha
-    best_alpha = results_df.loc[results_df['final_correlation'].idxmax(), 'alpha']
-    best_corr = results_df['final_correlation'].max()
+    best_alpha = results_df.loc[results_df['correlation'].idxmax(), 'alpha']
+    best_corr = results_df['correlation'].max()
     
     report.extend([
         "",
@@ -259,32 +221,17 @@ def create_detailed_report(results_df, output_file="alpha_analysis_report.md"):
 
 def main():
     """Main analysis function"""
-    from types import SimpleNamespace
+    folder_path = "/path/to/your/txt/files"
+    file_pattern = os.path.join(folder_path, "*.txt")
     
-    # Create minimal args for evaluation
-    args = SimpleNamespace(
-        sst_dev="data/ids-sst-dev.csv",
-        quora_dev="data/quora-dev.csv", 
-        sts_dev="data/sts-dev.csv",
-        etpc_dev="data/etpc-dev.csv",
-        batch_size=64,
-        use_gpu=True,
-        hidden_dropout_prob=0.3,
-        # Add other necessary arguments that your datasets need
-    )
+    results_df = extract_results_from_filenames(file_pattern)
     
-    print("Loading and evaluating models from sweep...")
-    results_df = load_results_from_directory("sts_sweep_results_25seeds", args)
-    
-    if len(results_df) == 0:
-        print("No results found! Make sure the sweep has completed.")
-        return
-    
-    print(f"Evaluated {len(results_df)} models")
+    print(f"Extracted {len(results_df)} results")
     print(f"Alphas tested: {sorted(results_df['alpha'].unique())}")
     
     # Save raw results
     results_df.to_csv('alpha_sweep_results.csv', index=False)
+    print("Saved raw results to alpha_sweep_results.csv")
     
     # Analyze performance
     print("Analyzing alpha performance...")
@@ -295,20 +242,29 @@ def main():
     # Create visualizations
     print("Creating visualizations...")
     create_alpha_visualizations(results_df)
+    print("Visualizations saved to alpha_analysis_plots/")
     
     # Create detailed report
     print("Generating detailed report...")
     create_detailed_report(results_df)
+    print("Report saved to alpha_analysis_report.md")
     
     # Print summary
-    best_alpha = results_df.loc[results_df['final_correlation'].idxmax(), 'alpha']
-    best_corr = results_df['final_correlation'].max()
+    best_alpha = results_df.loc[results_df['correlation'].idxmax(), 'alpha']
+    best_corr = results_df['correlation'].max()
+    worst_alpha = results_df.loc[results_df['correlation'].idxmin(), 'alpha']
+    worst_corr = results_df['correlation'].min()
     
-    print(f"\n=== BEST PERFORMING ALPHA ===")
-    print(f"Alpha: {best_alpha}")
-    print(f"Correlation: {best_corr:.4f}")
-    print(f"Results saved to alpha_sweep_results.csv and alpha_analysis_report.md")
+    print(f"\n=== PERFORMANCE SUMMARY ===")
+    print(f"Best Alpha: {best_alpha} (Correlation: {best_corr:.4f})")
+    print(f"Worst Alpha: {worst_alpha} (Correlation: {worst_corr:.4f})")
+    print(f"Overall Mean: {results_df['correlation'].mean():.4f}")
+    print(f"Overall Std: {results_df['correlation'].std():.4f}")
+    
+    # Show mean performance by alpha
+    print(f"\n=== MEAN PERFORMANCE BY ALPHA ===")
+    for alpha, group in results_df.groupby('alpha'):
+        print(f"Alpha {alpha}: {group['correlation'].mean():.4f} ± {group['correlation'].std():.4f} (n={len(group)})")
 
 if __name__ == "__main__":
-    from tqdm import tqdm
     main()

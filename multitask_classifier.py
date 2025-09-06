@@ -934,7 +934,7 @@ def train_multitask(args):
 
         if dev_acc > best_dev_acc:
             best_dev_acc = dev_acc
-            #save_model(model, optimizer, args, config, args.filepath)
+            save_model(model, optimizer, args, config, args.filepath)
     
     # Create metrics directory if it doesn't exist
     os.makedirs("metrics", exist_ok=True)
