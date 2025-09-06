@@ -506,7 +506,7 @@ def train_multitask(args):
                 b_labels = b_labels.to(device)
 
                 optimizer.zero_grad()
-                logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
                 loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
 
                 if config.option == "finetune":
@@ -515,6 +515,7 @@ def train_multitask(args):
 
                 train_loss += loss.item()
                 num_batches += 1
+                batch_idx += 1
                 if batch_idx >= config.max_batches and config.max_batches > 0:    
                     break
         
