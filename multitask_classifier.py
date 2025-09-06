@@ -874,7 +874,8 @@ def get_args():
         default=None,  # Set to None initially
         help="Path to save/load the model"
     )
-
+    
+    parser.add_argument("--fastEpoch", type=bool, default=False)
     # Parse all arguments
     args = parser.parse_args()
     
