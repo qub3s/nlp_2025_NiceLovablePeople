@@ -65,9 +65,7 @@ def model_eval_multitask(
                 quora_y_pred.extend(y_hat)
                 quora_y_true.extend(b_labels)
                 quora_sent_ids.extend(b_sent_ids)
-                print("logits shape:", logits.shape)
-                print("y_hat shape:", y_hat.shape)
-                print("b_labels shape:", b_labels.shape)
+
                 
         if task == "qqp" or task == "multitask":
             quora_accuracy = np.mean(np.array(quora_y_pred) == np.array(quora_y_true))
