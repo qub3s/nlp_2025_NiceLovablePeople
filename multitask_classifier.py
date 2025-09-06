@@ -110,9 +110,19 @@ class MultitaskBERT(nn.Module):
         # HS: Adding a linear layer for sentiment prediction. Will put this at end of last BERT block.
         # The final BERT embedding is the hidden state of [CLS] token which I will get 
         # as dict['pooler_output'] from output of BertModel.forward().
-        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
-        self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
-
+        # QQP - Verbesserter Classifier
+        self.paraphrase_classifier = nn.Sequential(
+            nn.Linear(BERT_HIDDEN_SIZE * 3, 768),
+            nn.GELU(),
+            nn.Dropout(config.hidden_dropout_prob),
+            nn.Linear(768, 1)
+        )
+        self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
+        # Initialisierung
+        nn.init.xavier_uniform_(self.paraphrase_classifier[0].weight)
+        nn.init.constant_(self.paraphrase_classifier[0].bias, 0.0)
+        nn.init.xavier_uniform_(self.paraphrase_classifier[3].weight)
+        nn.init.constant_(self.paraphrase_classifier[3].bias, 0.0)
         # STS Regression Head
         if config.regressor_type == "simple":
             self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
