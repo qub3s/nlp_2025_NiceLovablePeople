@@ -19,7 +19,7 @@ nltk.download('vader_lexicon')
 
     
 class SentiWordNetProcessor:
-    """Class to process sentences and extract SentiWordNet scores"""
+    ## Class to process sentences and extract SentiWordNet scores
     
     def __init__(self):
         # Cache for already processed words to speed up computation
@@ -27,7 +27,7 @@ class SentiWordNetProcessor:
         self.lemmatizer = WordNetLemmatizer()
     
     def get_wordnet_pos(self, treebank_tag):
-        """Function to convert POS tag to a format recognized by WordNet. Source: StackOverflow."""
+        # Function to convert POS tag to a format recognized by WordNet. Source: StackOverflow.
         if treebank_tag.startswith('J'):
             return wn.ADJ
         elif treebank_tag.startswith('V'):
@@ -40,7 +40,7 @@ class SentiWordNetProcessor:
             return None #treebank_tag
     
     def get_scores(self, sentence):
-        """Calculate SentiWordNet scores for a sentence"""
+        # Calculate SentiWordNet scores for a sentence
         # Tokenize and tag parts of speech
         tokens = word_tokenize(sentence)
         tagged_words = treebank_pos_tag(tokens)
@@ -106,7 +106,6 @@ class SentiWordNetProcessor:
 
 
 class SentiWordNetProcessor_NegHandling:
-    """Class to process sentences and extract SentiWordNet scores"""
     
     def __init__(self):
         # Cache for already processed words to speed up computation
@@ -132,7 +131,7 @@ class SentiWordNetProcessor_NegHandling:
         # **************************** #
     
     def get_wordnet_pos(self, treebank_tag):
-        """Function to convert POS tag to a format recognized by WordNet. Source: StackOverflow."""
+        # Function to convert POS tag to a format recognized by WordNet. Source: StackOverflow.
         if treebank_tag.startswith('J'):
             return wn.ADJ
         elif treebank_tag.startswith('V'):
@@ -146,9 +145,7 @@ class SentiWordNetProcessor_NegHandling:
     
     # *********** NEGATION DETECTION FUNCTION ************
     def is_negated(self, tokens, current_index):
-        """
-        Check if the current word is_negated or not by looking back 2 words for predefined 'negation words' 
-        """
+        # Check if the current word is_negated or not by looking back 2 words for predefined 'negation words' 
         start_idx = max(0, current_index - 3)  # Look back up to 3 words // max because I dont want to go out of bounds
         for i in range(start_idx, current_index):
             if tokens[i].lower() in self.negation_words:
@@ -157,7 +154,7 @@ class SentiWordNetProcessor_NegHandling:
     # ************************************************* #
     
     def get_scores(self, sentence):
-        """Calculate SentiWordNet scores for a sentence"""
+        # Calculate SentiWordNet scores for a sentence
         # Tokenize and tag parts of speech
         tokens = word_tokenize(sentence)
         tagged_words = treebank_pos_tag(tokens)
@@ -239,7 +236,7 @@ class SentiWordNetProcessor_NegHandling:
             # *********** NEGATION HANDLING ************
             if self.is_negated(tokens, i) and (pos_score > neg_score):
                 pos_score, neg_score = neg_score, pos_score  # Swap positive and negative scores
-            # ************************ #
+            # ******************************************
             
             pos_tag_string = pos_tag if pos_tag is not None else "None"
             # print(f"{word:15} | POS: {pos_tag_string:4} | Positive: {pos_score:.3f} Negative: {neg_score:.3f} Objective: {obj_score:.3f} ")
