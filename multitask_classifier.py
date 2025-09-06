@@ -1188,9 +1188,9 @@ def get_args():
     # Parse all arguments
     args = parser.parse_args()
     
-    # # Now calculate default_filepath using the parsed values
-    # if args.filepath is None:
-    #     args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
+    # Set default filepath if not provided
+    if args.filepath is None:
+        args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
     
     return args
 

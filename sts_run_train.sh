@@ -42,7 +42,7 @@ SEEDS=(11711 11712 11713 11714 11715 11716 11717 11718 11719 11720
 echo "Starting parameter sweeps with 25 seeds"
 
 # Run simcse-sbert experiments
-echo "Running simcse-sbert experiments..."
+echo "Running simcse-sbert experiments"
 for alpha in "${ALPHAS[@]}"; do
     for seed in "${SEEDS[@]}"; do
         echo "Running simcse-sbert alpha=$alpha, seed=$seed"
@@ -67,7 +67,7 @@ for alpha in "${ALPHAS[@]}"; do
 done
 
 # Run SimCSE-only experiments
-echo "Running SimCSE-only experiments..."
+echo "Running SimCSE-only experiments"
 for batch_size in "${BATCH_SIZES_SIMCSE[@]}"; do
     for seed in "${SEEDS[@]}"; do
         echo "Running SimCSE-only batch_size=$batch_size, seed=$seed"
@@ -91,7 +91,7 @@ for batch_size in "${BATCH_SIZES_SIMCSE[@]}"; do
 done
 
 # Run SBERT-only experiments
-echo "Running SBERT-only experiments..."
+echo "Running SBERT-only experiments"
 for batch_size in "${BATCH_SIZES_SBERT[@]}"; do
     for seed in "${SEEDS[@]}"; do
         echo "Running SBERT-only batch_size=$batch_size, seed=$seed"
