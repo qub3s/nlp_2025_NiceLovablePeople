@@ -81,11 +81,11 @@ class MultitaskBERT(nn.Module):
         # self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
         # self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
         
-        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 8, N_SENTIMENT_CLASSES) # [768+8] -> 8 # HS: 8 extra features from SWN and VADER
+        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 6 + 4, N_SENTIMENT_CLASSES) # [768+6+4] -> 5 # HS: 10 extra features from SWN and VADER
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
         self.swn_gate = nn.Sequential( # Gate to combine BERT and SWN features with dynamic weights
-            nn.Linear(768 + 8, 256),  # h_cls + SWN features
+            nn.Linear(768 + 6 + 4, 256),  # h_cls + SWN features + VADER features
             nn.ReLU(),
             nn.Linear(256, 3),   
             nn.Sigmoid())   # BERT_weight and SWN_weight and VADER_weight
@@ -175,10 +175,10 @@ class MultitaskBERT(nn.Module):
             sentiment_ratio = avg_pos_score / (avg_neg_score + 1e-8) if avg_neg_score > 0 else 10  # Pos/Neg ratio
             net_sentiment = avg_pos_score - avg_neg_score  # Net sentiment score
             
-            swn_features.append([avg_pos_score, avg_neg_score, sentiment_strength, sentiment_ratio, net_sentiment])
+            swn_features.append([avg_pos_score, avg_neg_score, avg_obj_score, sentiment_strength, sentiment_ratio, net_sentiment])
 
             vader_pos, vader_neg, vader_neutral, vader_compound = vader_processor.get_scores(sentence)
-            vader_features.append([vader_pos, vader_neg, vader_compound])
+            vader_features.append([vader_pos, vader_neg, vader_neutral, vader_compound])
 
         swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=h_cls.device)
         vader_tensor = torch.tensor(vader_features, dtype=torch.float32, device=h_cls.device)

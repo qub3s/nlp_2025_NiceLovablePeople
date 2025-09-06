@@ -197,7 +197,7 @@ To improve the model, a myriad of research questions were posited and then worke
 
 - Learning Rate: a default learning rate of 1e-5 almost always lead to quick convergence of training accuracy to 90%+ values. I experimented with lower values and found that 1e-6 is the ideal value as the dev accuracy increases gradually and while keeping the train accuracy under control so the model will generalize much better. I had to increase the epochs from 10 to 25 which made training models more expensive but it is worth it because the models will now generalize much better.
 
-Result: The results showed clearly that the train accuracy was now more in tandem with the dev accuracy but there was no discernible improvement in the baseline dev accruacy. (Note: Although solving overfitting is a positive change, I reverted to original (lr=1e-5 / epochs=10) settings for the remainder of my experiments for quicker trainings and validations. Eventually, for the best model I get I will run the training to with the smaller learning rate.)
+Result: The results showed clearly that the train accuracy was now more in tandem with the dev accuracy but there was no discernible improvement in the baseline dev accruacy. (Note: Although solving overfitting is a positive change, I reverted to original (lr=1e-5 / epochs=10) settings for the remainder of my experiments for quicker trainings and validations). 
 
 
 **3. Can document-level sentiment scores aid minBERT in sentiment classification?**
@@ -292,11 +292,13 @@ The weight of these two sources is equal at the moment but in reality one source
 
 It's a simple NN which takes in h_cls+SWN scores and outputs two weights (0.0 < weight < 1.0) using a sigmoid function. First weight for BERT features and second weight for the SWN scores.
 
-Architecture: (768+5) → 256 → 2
+Gating mechanism Architecture: (768+5) → 256 → 2
 
 The bert_weight is multiplied element-wise to 768 BERT features, and the swn_weight is multiplied element-wise to the 5 SWN features before all are concatenated and mapped to the classification head.
 
 Lastly, instead of a sigmoid function, a softmax was also tried to make the weights sum up to 1.0 but it reduced dev accuracy slightly so sigmoid was chosen at the end. The sigmoid gives a 0-1 weight for each of BERT and SWN independent of each other.
+
+Result: Slight improvement in dev accuracy was observed.
 
 
 **8. Can we add one more lexical database’s sentiment scores in addition to SWN scores to see if it improves the model?**
@@ -312,23 +314,29 @@ Note: pos + neg + neu = 1.0 like the SWN scores
 
 Citation: https://www.researchgate.net/publication/381650914_Understanding_Sentiment_Analysis_with_VADER_A_Comprehensive_Overview_and_Application
 
-**Experiment:** VADER scores are a document-level (sentence-level) polarity scores which describe positivity or negativity in sentiment of a text. Implementation was a much simpler activity because all the skeleton for the SWN scores was already set up. A new class `VADERProcessor` was written to extract these scores. Additionally, the gating mechanism was altered to cater to this new third type of features in addition to BERT and SWN. the "neutral" vader score was ommitted. and only the remaining 3 were kept.
+**Experiment:** VADER scores are a document-level (sentence-level) polarity scores which describe positivity or negativity in sentiment of a text. Implementation was a much simpler activity because all the skeleton for the SWN scores was already set up. A new class `VADERProcessor` was written to extract these scores. The "neutral" vader score was not used due to same reason avg_obj_score from SWN was ommitted. Additionally, the gating mechanism was altered to cater to this novel, third type of features in addition to BERT and SWN. 
 
-Dev accuracy improved slightly.
+NEW Gating mechanism Architecture: (768+8) → 256 → 3
+
+Result: Further improvement in dev accuracy was observed.
 
 **9. Adding more training data**
 
 **Explanation:** I tried to find open-source, fine-grained sentiment movie review datasets on the internet but was unsuccessful. The closest usable thing I found was the binary sentiment IMDB movie review dataset on kaggle with https://www.kaggle.com/datasets/lakshmi25npathi/imdb-dataset-of-50k-movie-reviews with 50000 examples. 
 
-**Experiment:** I changed the sentiments from positive and negative to 4 and 0 respectively, changed the column names, appended the dataset to my training data. I was not expecting great results because the sentiments in the new data were not fine-grained which made the extra data different from my problem, and not all examples were usable for me because the average movie-review length was much bigger in the IMDB dataset which was causing out-of-memory errors during training so I was able to use only 1856 rows from the IMDB data for my training. At the end the dev accuracy dropped to 0.503 so I reverted to my original training data.
+**Experiment:** I changed the sentiments from positive and negative to 4 and 0 respectively, changed the column names, appended the dataset to my training data. I was not expecting good results because:
+- The sentiments in the new data were not fine-grained which made the extra IMDB data different from my problem at hand.
+- Not all examples were usable for me because the average movie-review length was much bigger in the IMDB dataset which was causing out-of-memory errors during training so I was able to use only 1856 rows from the IMDB data for my training.
+
+At the end the dev accuracy dropped to 0.503 so I reverted to my original training data.
 
 
-**Summary:**
+**Summary of Experiments:**
 | Sno.| Experiment | Best Dev Accuracy |
 |---|--------------|-------------------|
 | 0 | Baseline | 0.521 |
 | 1 | Remove attention masking from BERT | 0.520 |
-| 2 | Hyperparameter tuning to solve overfitting | 0.52 (reverted) |
+| 2 | Hyperparameter tuning to solve overfitting | 0.519 (reverted) |
 | 3 | SWN score (positive and negative) added to h_cls | 0.532 |
 | 4 | Add dense layers between h_cls and classification head| 0.490 (reverted) |
 | 5 | Engineer 3 new features from SWN positive and negative scores| 0.533 |
