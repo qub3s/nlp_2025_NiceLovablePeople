@@ -92,7 +92,7 @@ class MultitaskBERT(nn.Module):
                 print(f"Missing keys: {len(missing_keys)}")
                 print(f"Unexpected keys: {len(unexpected_keys)}")
             else:
-                print("Warning: No BERT weights found in SimCSE model.")
+                print("Warning")
                 
         else:
             self.bert = BertModel.from_pretrained(
@@ -553,29 +553,20 @@ def train_multitask(args):
     
     # Learning rate scheduler
     scheduler = get_linear_schedule_with_warmup(
-    optimizer,
-    num_warmup_steps=num_warmup_steps,
-    num_training_steps=total_steps
+        optimizer,
+        num_warmup_steps=num_warmup_steps,
+        num_training_steps=total_steps
     )
 
     best_dev_acc = float("-inf")
-
-    # Save train/dev losses and correlations
-    train_correlations = []
-    dev_correlations = []
-    train_losses = []
-    dev_losses = []
 
     ## Training loop
     for epoch in range(args.epochs):
 
         model.train()
         train_loss = 0
-        dev_loss = 0
         num_batches = 0
-        dev_num_batches = 0
         
-
         # SST training
         if args.task == "sst" or args.task == "multitask":
             for batch in tqdm(
@@ -631,7 +622,7 @@ def train_multitask(args):
                     train_loss += loss.item()
                     num_batches += 1
 
-                    if batch_idx >= config.max_batches:    
+                    if batch_idx >= config.max_batches and config.max_batches > 0:    
                         break
 
             # Sbert
@@ -663,7 +654,7 @@ def train_multitask(args):
 
                     batch_idx += 1
 
-                    if batch_idx >= config.max_batches:    
+                    if batch_idx >= config.max_batches and config.max_batches > 0:    
                         break
             
             # SimCSE
@@ -699,7 +690,7 @@ def train_multitask(args):
 
                     batch_idx += 1
 
-                    if batch_idx >= config.max_batches:    
+                    if batch_idx >= config.max_batches and config.max_batches > 0:    
                         break
             
             # Combined SimCSE + SBERT
@@ -750,7 +741,7 @@ def train_multitask(args):
 
                     batch_idx += 1
 
-                    if batch_idx >= config.max_batches:    
+                    if batch_idx >= config.max_batches and config.max_batches > 0:    
                         break
 
         # QQP training
@@ -814,75 +805,6 @@ def train_multitask(args):
 
         train_loss = train_loss / num_batches
 
-
-        #     # Evaluation on dev set
-        #     if config.sts_training_type == "standard":
-        #         if args.task == "sts" or args.task == "multitask":
-        #             for batch in tqdm(sts_dev_dataloader):
-        #                 b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-        #                     batch["token_ids_1"].to(device),
-        #                     batch["attention_mask_1"].to(device),
-        #                     batch["token_ids_2"].to(device),
-        #                     batch["attention_mask_2"].to(device),
-        #                     batch["labels"].to(device).float(),
-        #                 )
-                        
-        #                 predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-        #                 loss = F.mse_loss(predictions, b_labels.view(-1))
-        #                 dev_loss += loss.item()
-        #                 dev_num_batches += 1
-
-        #     elif config.sts_training_type == "sbert":
-        #         if args.task == "sts" or args.task == "multitask":
-        #             for batch in tqdm(sts_dev_dataloader):
-        #                 b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-        #                     batch["token_ids_1"].to(device),
-        #                     batch["attention_mask_1"].to(device),
-        #                     batch["token_ids_2"].to(device),
-        #                     batch["attention_mask_2"].to(device),
-        #                     batch["labels"].to(device).float(),
-        #                 )
-        #                 predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-        #                 loss = F.mse_loss(predictions, b_labels.view(-1))
-        #                 dev_loss += loss.item()
-        #                 dev_num_batches += 1
-                
-            
-        #     elif config.sts_training_type == "simcse":
-        #         if args.task == "sts" or args.task == "multitask":
-        #             for batch in tqdm(sts_dev_dataloader):
-        #                 b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-        #                     batch["token_ids_1"].to(device),
-        #                     batch["attention_mask_1"].to(device),
-        #                     batch["token_ids_2"].to(device),
-        #                     batch["attention_mask_2"].to(device),
-        #                     batch["labels"].to(device).float(),
-        #                 )
-        #                 predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-        #                 loss = F.mse_loss(predictions, b_labels.view(-1))
-        #                 dev_loss += loss.item()
-        #                 dev_num_batches += 1
-            
-        #     elif config.sts_training_type == "simcse_sbert":
-        #         if args.task == "sts" or args.task == "multitask":
-        #             for batch in tqdm(sts_dev_dataloader):
-        #                 b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-        #                     batch["token_ids_1"].to(device),
-        #                     batch["attention_mask_1"].to(device),
-        #                     batch["token_ids_2"].to(device),
-        #                     batch["attention_mask_2"].to(device),
-        #                     batch["labels"].to(device).float(),
-        #                 )
-                        
-        #                 predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-        #                 simcse_loss = F.mse_loss(predictions, b_labels.view(-1))
-
-        #                 dev_loss += simcse_loss
-        #                 dev_num_batches += 1
-        
-        
-        # dev_loss = dev_loss / dev_num_batches
-
         quora_train_acc, _, _, sst_train_acc, _, _, sts_train_corr, _, _, etpc_train_acc, _, _ = (
             model_eval_multitask(
                 sst_train_dataloader,
@@ -920,12 +842,6 @@ def train_multitask(args):
             "multitask": (0, 0),
         }[args.task]
 
-        # # Store metrics
-        # train_correlations.append(sts_train_corr)
-        # dev_correlations.append(sts_dev_corr)
-        # train_losses.append(train_loss)
-        # dev_losses.append(dev_loss)
-
         print(
             f"Epoch {epoch+1:02} ({args.task}): train loss :: {train_loss:.3f}, train :: {train_acc:.3f}, dev :: {dev_acc:.3f}"
         )
@@ -933,24 +849,6 @@ def train_multitask(args):
         if dev_acc > best_dev_acc:
             best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
-    
-    # Create metrics directory if it doesn't exist
-    os.makedirs("metrics", exist_ok=True)
-
-    # Save metrics with timestamp
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    metrics_filename = f"metrics/sts_metrics_{args.task}_{timestamp}.npz"
-
-    metrics = {
-        'train_correlations': np.array(train_correlations),
-        'dev_correlations': np.array(dev_correlations),
-        'train_losses': np.array(train_losses),
-        'dev_losses': np.array(dev_losses)
-    }
-
-    np.savez(metrics_filename, **metrics)
-    print(f"Saved metrics to {metrics_filename}")
-
 
     if args.task == "sts":
         return best_dev_acc
@@ -1033,7 +931,7 @@ def get_args():
     parser.add_argument("--alpha", type=float, default=0.5, help="Weight for SimCSE loss in combined training")
 
     # NEW: Max Batches
-    parser.add_argument("--max_batches", type=float, default=180, help="Number of batches tro train on (for STS task only)")
+    parser.add_argument("--max_batches", type=float, default=0, help="Number of batches tro train on (for STS task only)")
 
     # NEW: Add warmup ratio argument
     parser.add_argument("--warmup_ratio", type=float, default=0.1, help="Percentage of total steps for warmup (0.1 = 10%)")
@@ -1201,14 +1099,11 @@ def main():
     if args.task == "sts":
         correlation = train_multitask(args)
     else:
-        train_multitask(args)  # For other tasks, just train without return value
+        train_multitask(args)  # Train without return value
     
-    # If we're doing a parameter sweep, save results instead of model
+    # Save results instead of model
     if hasattr(args, 'save_results_only') and args.save_results_only and args.task == "sts":
-        # Create results directory
         os.makedirs("sts_sweep_results_both", exist_ok=True)
-        
-        # Create descriptive filename with task type
         filename_parts = [args.sts_training_type]
         filename_parts.append(f"seed_{args.seed}")
         
@@ -1222,7 +1117,6 @@ def main():
         filename = "_".join(filename_parts) + ".txt"
         filepath = os.path.join("sts_sweep_results_both", filename)
         
-        # Save results to text file
         with open(filepath, 'w') as f:
             f.write(f"Task: {args.task}\n")
             f.write(f"Training type: {args.sts_training_type}\n")
@@ -1243,18 +1137,7 @@ def main():
         print(f"Saved results to {filepath}")
         print(f"Final correlation: {correlation:.4f}")
     else:
-        # Normal operation - test the model
         test_model(args)
 
 if __name__ == "__main__":
     main()
-
-# if __name__ == "__main__":
-#     args = get_args()
-
-#     if not hasattr(args, 'filepath') or args.filepath is None:
-#         args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
-
-#     seed_everything(args.seed)  # fix the seed for reproducibility
-#     train_multitask(args)
-#     test_model(args)
