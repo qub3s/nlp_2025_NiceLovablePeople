@@ -428,10 +428,13 @@ def train_multitask(args):
             weight_decay=0.025,
             correct_bias=False,
         )
+    elif args.task == "sst":
+        lr = args.lr
+        optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.025) ## HS: L2 regularization added
     else:
         # Default optimizer
         lr = args.lr
-        optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.025) ## HS: L2 regularization added
+        optimizer = AdamW(model.parameters(), lr=lr)
 
 
     best_dev_acc = float("-inf")
