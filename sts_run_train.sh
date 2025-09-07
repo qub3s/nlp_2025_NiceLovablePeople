@@ -31,12 +31,11 @@ echo "Latest Commit: $(git rev-parse --short HEAD)"
 echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Define parameter ranges - focus on most promising values
-ALPHAS=(0.925 0.95 0.975)
+ALPHAS=(0.95 0.975)
 BATCH_SIZES_SBERT=(5 10 15 20 50 80 110 150 180)
 BATCH_SIZES_SIMCSE=(5 10 15 20 30 50 70 90)
 SEEDS=(11711 11712 11713 11714 11715 11716 11717 11718 11719 11720 
-       11721 11722 11723 11724 11725 11726 11727 11728 11729 11730
-       11731 11732 11733 11734 11735)
+       11721 11722 11723 11724 11725)
 
 # Create results directory
 echo "Starting parameter sweeps with 25 seeds"
