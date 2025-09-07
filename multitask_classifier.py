@@ -79,8 +79,18 @@ class MultitaskBERT(nn.Module):
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
 
         # QQP
+        self.paraphrase_classifier = nn.Sequential(
+            nn.Linear(BERT_HIDDEN_SIZE * 3, 768),
+            nn.GELU(),
+            nn.Dropout(config.hidden_dropout_prob),
+            nn.Linear(768, 1)
+        )
         self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
+        # Initialisierung
+        nn.init.xavier_uniform_(self.paraphrase_classifier[0].weight)
+        nn.init.constant_(self.paraphrase_classifier[0].bias, 0.0)
+        nn.init.xavier_uniform_(self.paraphrase_classifier[3].weight)
+        nn.init.constant_(self.paraphrase_classifier[3].bias, 0.0)
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
