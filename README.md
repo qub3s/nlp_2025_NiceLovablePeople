@@ -1,20 +1,21 @@
 # DNLP SS25 Final Project 
 
-<div align="left">
+<h3>Group Name: NiceLovablePeople</h3>
 
-<b> NiceLoveablePeople </b> <br/>
+Group code: G04
 
-Esther Hagenkort: esthako/GOESTERN-1006113 <br/>
+Group repository:
 
-Georg Eckardt: qub3s <br/>
+Tutor responsible: Niklas Bauer
 
-Hamza Ahmed Siddiqui: hamzasiddiqui10 <br/>
+Group team leader: Esther Hagenkort: esthako/GOESTERN-1006113 
 
-Amon Pönitzsch: 4m0n <br/>
+Group members:
+- Georg Eckardt: qub3s
+- Hamza Ahmed Siddiqui: hamzasiddiqui10
+- Amon Pönitzsch: 4m0n
+- Leonardo Christian da Camara Silva: Dacasil
 
-Leonardo Christian da Camara Silva: Dacasil <br/>
-
-</div>
 
 ## Introduction
 This repository is our implementation of the project for the model M.Inf.2202: Deep Learning for Natural Language Processing at the University of Göttingen by the GippLab.
@@ -27,7 +28,7 @@ Adsitionally to completing the bert implementation and the optimizer, the follow
 - Paraphrase Type Generation (PTG) - Generating diverse paraphrase types
 - Bonus: Paraphrase Type Detection with Bert (PTD-Bert) - Identifying paraphrase types and relationships
 
-## Implementation & Contribution
+## Contributions
 We followed the instructions and adapted hyperparameters when needed to avoid overfitting.
 
 Esther Hagenkort: 
@@ -52,12 +53,12 @@ Leonardo Christian da Camara Silva:
 - Semantic Textual Similarity (STS)
 - bonus: paraphrase type detection with bert (PTD-bert)
 
-## Requirements
+## Setup instructions
 
-## Training
+## Methodology
 
 
-## Results
+## Experiments and Results
 
 ### Stanford Sentiment Treebank (SST) - Sentiment Analysis
 The vanilla implementation of the sentiment prediction with minBERT gave us a baseline of 0.521 dev accuracy in Part-01. 
@@ -278,8 +279,6 @@ Paper: https://www.researchgate.net/publication/381650914_Understanding_Sentimen
 - batch size: `64`
 
 Note: The final model reaches peak dev accuracy of 0.544 in the 3rd epoch and saves itself. Beyond the 3rd epoch it just overfits to training data as highlighted in the experiment #2.
-
-
 
 
 
