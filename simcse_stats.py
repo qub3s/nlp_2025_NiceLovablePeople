@@ -101,21 +101,19 @@ def create_batch_visualizations(results_df, output_dir="batch_analysis_plots"):
     plt.fill_between(batch_stats.index, 
                     batch_stats['mean'] - batch_stats['ci'], 
                     batch_stats['mean'] + batch_stats['ci'], 
-                    alpha=0.3, color='green', label='95% CI')
+                    alpha=0.3, color='blue', label='95% CI')
 
     plt.plot(batch_stats.index, batch_stats['mean'], 
-            'o-', color= 'green', linewidth=2, markersize=6, 
+            'o-', color= 'blue', linewidth=2, markersize=6, 
             label='Mean Correlation')
     
     plt.xscale('log')
 
     plt.xlabel('Number of Batches', fontsize=12)
     plt.ylabel('Pearson Correlation', fontsize=12)
-    plt.title('Effect of Batch Size on STS Performance', fontsize=14, fontweight='bold')
-    plt.grid(True, alpha=0.3, linestyle='--')
+    plt.title('Effect of Batch Size on SimCSE Performance', fontsize=14, fontweight='bold')
     plt.tight_layout()
-    plt.xlim(batch_stats.index.min() - 0.5, batch_stats.index.max() + 0.5)
-
+    plt.xlim(batch_stats.index.min() - 0.5, batch_stats.index.max() + 10)
     plt.legend(loc='best', fontsize=10)
     plt.savefig(f'{output_dir}/simcs_batch_vs_correlation_ci.png', 
                 dpi=300, bbox_inches='tight', pad_inches=0.1)
@@ -139,7 +137,6 @@ def create_batch_visualizations(results_df, output_dir="batch_analysis_plots"):
     plt.title('Individual Scores with Mean and Confidence Intervals (Batch Size)', fontsize=16)
     plt.xticks(range(len(batches)), [int(b) if b.is_integer() else b for b in batches])
     plt.legend()
-    plt.grid(True, alpha=0.3)
     plt.savefig(f'{output_dir}/simcse_batch_individual_points_ci.png', dpi=300, bbox_inches='tight')
     plt.close()
    

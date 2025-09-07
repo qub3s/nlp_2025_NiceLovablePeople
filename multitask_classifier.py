@@ -1206,7 +1206,7 @@ def main():
     # If we're doing a parameter sweep, save results instead of model
     if hasattr(args, 'save_results_only') and args.save_results_only and args.task == "sts":
         # Create results directory
-        os.makedirs("sts_sweep_results", exist_ok=True)
+        os.makedirs("sts_sweep_results_both", exist_ok=True)
         
         # Create descriptive filename with task type
         filename_parts = [args.sts_training_type]
@@ -1220,7 +1220,7 @@ def main():
         
         filename_parts.append(f"corr_{correlation:.4f}")
         filename = "_".join(filename_parts) + ".txt"
-        filepath = os.path.join("sts_sweep_results", filename)
+        filepath = os.path.join("sts_sweep_results_both", filename)
         
         # Save results to text file
         with open(filepath, 'w') as f:
@@ -1240,8 +1240,8 @@ def main():
             f.write(f"Final correlation: {correlation:.4f}\n")
             f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
         
-        print(f"✓ Saved results to {filepath}")
-        print(f"✓ Final correlation: {correlation:.4f}")
+        print(f"Saved results to {filepath}")
+        print(f"Final correlation: {correlation:.4f}")
     else:
         # Normal operation - test the model
         test_model(args)
