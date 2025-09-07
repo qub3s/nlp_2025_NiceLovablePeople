@@ -71,6 +71,9 @@ for i, name in enumerate(unique_names):
     temp = verlauf[verlauf["Filename"] == name]
     # Plotte Linien und Scatter-Punkte für jeden Typ
     for col, marker in markers.items():
+        print(col)
+        if "train_loss" in col:
+            continue
         plt.plot(temp["epoch"], temp[col], label=f"{name.split('-')[0]} - {col.replace('_', ' ').title()}", color=colors[i], alpha=0.6)
         plt.scatter(temp["epoch"], temp[col], color=colors[i], marker=marker, edgecolor="black", s=50, alpha=0.8)
 
@@ -78,6 +81,9 @@ for i, name in enumerate(unique_names):
 legend_elements = []
 for i, name in enumerate(unique_names):
     for col, marker in markers.items():
+        print(col)
+        if "train_loss" in col:
+            continue
         legend_elements.append(Line2D([0], [0], color=colors[i], marker=marker, label=f"{name.split('-')[0]} - {col.replace('_', ' ').title()}", 
                                        markersize=8, linestyle='-', alpha=0.8))
 plt.hlines(y=0.870,xmin=1,xmax=6, color='r', linestyle='--', label='BASELINE')  # Horizontale Linie bei y=0.75
