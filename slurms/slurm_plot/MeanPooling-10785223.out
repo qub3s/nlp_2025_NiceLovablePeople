@@ -1,0 +1,22 @@
+Paraphrase detection accuracy: 0.896
+Paraphrase detection accuracy: 0.865
+Epoch 01 (qqp): train loss :: 0.354, train :: 0.896, dev :: 0.865
+Saving the model to models/finetune-6-1e-05-qqp.pt.
+Paraphrase detection accuracy: 0.941
+Paraphrase detection accuracy: 0.880
+Epoch 02 (qqp): train loss :: 0.248, train :: 0.941, dev :: 0.880
+Saving the model to models/finetune-6-1e-05-qqp.pt.
+Paraphrase detection accuracy: 0.967
+Paraphrase detection accuracy: 0.884
+Epoch 03 (qqp): train loss :: 0.179, train :: 0.967, dev :: 0.884
+Saving the model to models/finetune-6-1e-05-qqp.pt.
+Paraphrase detection accuracy: 0.986
+Paraphrase detection accuracy: 0.886
+Epoch 04 (qqp): train loss :: 0.123, train :: 0.986, dev :: 0.886
+Saving the model to models/finetune-6-1e-05-qqp.pt.
+Paraphrase detection accuracy: 0.992
+Paraphrase detection accuracy: 0.883
+Epoch 05 (qqp): train loss :: 0.081, train :: 0.992, dev :: 0.883
+Paraphrase detection accuracy: 0.994
+Paraphrase detection accuracy: 0.882
+Epoch 06 (qqp): train loss :: 0.056, train :: 0.994, dev :: 0.882
