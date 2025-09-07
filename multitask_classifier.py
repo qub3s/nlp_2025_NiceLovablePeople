@@ -80,14 +80,26 @@ class MultitaskBERT(nn.Module):
 
         # QQP
         self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
-        # Updated to correctly handle the concatenated features (u, v, |u-v|)
-        self.paraphrase_classifier = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
+        self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
         
-           
+            
+    def mean_pooling(self, model_output, attention_mask):
+        """
+        Performs mean pooling on the token embeddings, taking into account the attention mask.
+        model_output: last_hidden_state from BERT
+        attention_mask: attention mask for the input
+        Returns: pooled sentence embedding of size [batch_size, hidden_size]
+        """
+        token_embeddings = model_output["last_hidden_state"]
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        return sum_embeddings / sum_mask
+
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
@@ -98,6 +110,10 @@ class MultitaskBERT(nn.Module):
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        if args.task == "qqp":
+            embeddings = self.mean_pooling(outputs, attention_mask)
+            embeddings = nn.functional.layer_norm(embeddings, normalized_shape=embeddings.size()[1:])
+            return embeddings
         return outputs["pooler_output"] 
     
     def forward_etpc(self, input_ids, attention_mask):
@@ -152,17 +168,11 @@ class MultitaskBERT(nn.Module):
         Dataset: Quora
         """
 
-        u = self.forward(input_ids_1, attention_mask_1)
-        v = self.forward(input_ids_2, attention_mask_2)
-
-        u = self.paraphrase_dropout(u)
-        v = self.paraphrase_dropout(v)
-
-        # Nur für Inferenz: Der originale Pfad zur Klassifikation
-        abs_diff = torch.abs(u - v)
-        combined_features = torch.cat([u, v, abs_diff], dim=-1)
-        logits = self.paraphrase_classifier(combined_features).squeeze(-1)
-        return logits
+        input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
+        attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
+        mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
+        return self.paraphrase_classifier(mean_embedding).squeeze(-1)
+    
 
     def predict_paraphrase_types(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
