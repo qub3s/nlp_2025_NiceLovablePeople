@@ -79,18 +79,8 @@ class MultitaskBERT(nn.Module):
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
 
         # QQP
-        self.paraphrase_classifier = nn.Sequential(
-            nn.Linear(BERT_HIDDEN_SIZE * 3, 768),
-            nn.GELU(),
-            nn.Dropout(config.hidden_dropout_prob),
-            nn.Linear(768, 1)
-        )
         self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
-        # Initialisierung
-        nn.init.xavier_uniform_(self.paraphrase_classifier[0].weight)
-        nn.init.constant_(self.paraphrase_classifier[0].bias, 0.0)
-        nn.init.xavier_uniform_(self.paraphrase_classifier[3].weight)
-        nn.init.constant_(self.paraphrase_classifier[3].bias, 0.0)
+        self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -161,10 +151,18 @@ class MultitaskBERT(nn.Module):
         Dataset: Quora
         """
 
-        input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
-        attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
-        mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
-        return self.paraphrase_classifier(mean_embedding).squeeze(-1)
+        u = self.forward(input_ids_1, attention_mask_1)
+        v = self.forward(input_ids_2, attention_mask_2)
+
+        u = self.paraphrase_dropout(u)
+        v = self.paraphrase_dropout(v)
+
+        # Nur für Inferenz: Der originale Pfad zur Klassifikation
+        abs_diff = torch.abs(u - v)
+        combined_features = torch.cat([u, v, abs_diff], dim=-1)
+        logits = self.paraphrase_classifier(combined_features).squeeze(-1)
+        return logits
+
     
 
     def predict_paraphrase_types(
