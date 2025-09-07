@@ -39,7 +39,7 @@ Esther Hagenkort:
 Georg Eckardt: 
 - optimizer
 - bert.py
-- paraphrase type detection
+- Paraphrase Type Detection - PTD
 
 Hamza Ahmed Siddiqui:
 - Came up with group name 
@@ -176,31 +176,56 @@ For the second part I will do hyperparameter finetuning to counter overfitting a
 
 
 ## Results Part 2
+
+For each experiment answer briefly the questions:
+
+What experiments are you executing? Don't forget to tell how you are evaluating things.
+What were your expectations for this experiment?
+What have you changed compared to the base model (or to previous experiments, if you run experiments on top of each other)?
+What were the results?
+Add relevant metrics and plots that describe the outcome of the experiment well.
+Discuss the results. Why did improvement A perform better/worse compared to other improvements? Did the outcome match your expectations? Can you recognize any trends or patterns?
+
+----------------------------------------------
+
 ### Stanford Sentiment Treebank (SST) - Sentiment Analysis
 The vanilla implementation of the sentiment prediction with minBERT gave us a baseline of 0.521 dev accuracy in Part-01. 
 
-To improve the model, a myriad of research questions were posited and then worked on. Some attempted improvements yielded increases in the dev accuracy, some did not affect the accuracy although they were sensible, and some worsened the dev accuracy. In this section, all of the major improvement attempts are explained in order and at the end you will find a summary table which will show you dev accuracy after each change was implemented.
+To improve the model, a myriad of research questions were posited and then worked on. The main target to measure model's performance was dev set accuracy after each experiment. Some experiments yielded increases in the dev accuracy, some did not affect the accuracy although they were sensible, and some worsened the dev accuracy. In this section, all of the major improvement attempts are explained in order and at the end you will find a summary table which will show you dev accuracy after each change was implemented.
+
+The state-of-the-art model for the SST dataset has ~59.8% dev accuracy so room for improvement from baseline is slim. And even 0.5% improvements in accuracy are significant for this problem.
+
+<h3> 1. Is attention masking in the the self-attention layer for a sentiment classification task hurting performance? </h3>
+<details> 
+
+**Explanation:** In our Part-01 submission we had to complete bert.py according to documentation so we had implemented the attention masking so subsequently the model only has left-context. For a sentiment classification task, bi-directional context will always be available and will always be more powerful so my expectation is a slight improvement in dev accuracy.
+
+**Implementation:** Code change was straightforward whereby I had to comment out the attention-masking in `bert.py`. 
+```
+X = X + attention_mask ## HS: attention mask removed for bidirectional context
+```
+The results did not improve and my understanding is that the model needed to be pretrained with bidirectional context properly for this alteration to impact results significantly.
+
+</details>
 
 
-**1. Is attention masking in the self-attention layer for a sentiment classification task hurting performance?**
-
-**Explanation:** In our Part-01 submission we had to complete bert.py according to documentation so we had implemented the attention masking so subsequently the model only has left-context. For a sentiment classification task, bi-directional context will always be available and will always be more powerful.
-
-**Experiment:** I commented out the attention masking in `bert.py`. The results did not improve significantly and in my understanding, its because the model needs to be pretrained with bidirectional context properly for this alteration to impact results significantly.
-
-**2. Can we solve the clear overfitting problem in the baseline model?**
+<h3>2. Can we solve the clear overfitting problem in the baseline model?</h3>
+<details> 
 
 **Explanation:** In baseline model’s training the training accuracy increases consistently and reaches 90%+ whereas dev accuracy plateaued around 52% and even starts going down in later epochs. This shows directly that the baseline model is suffering from overfitting on the training data. The solution can be some hyperparameter tuning.
 
-**Experiment:** 
+**Implementation:** 
 - L2 regularization: in the baseline implementation we did not have any regularization so the weights could grow indefinitely. After looking at documentation for AdamW, I found that the weight_decay parameter can enable L2 regularization. I tried 0.01 and 0.025 and settled on the latter. 
 
 - Learning Rate: a default learning rate of 1e-5 almost always lead to quick convergence of training accuracy to 90%+ values. I experimented with lower values and found that 1e-6 is the ideal value as the dev accuracy increases gradually and while keeping the train accuracy under control so the model will generalize much better. I had to increase the epochs from 10 to 25 which made training models more expensive but it is worth it because the models will now generalize much better.
 
-Result: The results showed clearly that the train accuracy was now more in tandem with the dev accuracy but there was no discernible improvement in the baseline dev accruacy. (Note: Although solving overfitting is a positive change, I reverted to original (lr=1e-5 / epochs=10) settings for the remainder of my experiments for quicker trainings and validations). 
+**Results:** The results showed clearly that the train accuracy was now more in tandem with the dev accuracy but there was no discernible improvement in the baseline dev accruacy. (Note: Although solving overfitting is a positive change, I reverted to original (lr=1e-5 / epochs=10) settings for the remainder of my experiments for quicker trainings and validations). 
 
+</details> 
 
-**3. Can document-level sentiment scores aid minBERT in sentiment classification?**
+<h3>3. Can document-level sentiment scores aid minBERT in sentiment classification?</h3>
+
+<details> 
 
 **Explanation:** Our work is inspired by the feature fusion approach of Hoover et al. (2020), but we implement a simplified, document-level variant. Instead of performing complex phrase-level composition, we calculate aggregate SentiWordNet scores for the entire input sentence and concatenate them directly with the h_cls embedding before classification. This provides the model with a strong prior sentiment signal without additional computational overhead.
 
@@ -221,7 +246,7 @@ Citation: SentiBERT: A Transferable Transformer-Based Architecture for Compositi
 https://aclanthology.org/2020.acl-main.341.pdf
 
 
-**Experiment:** To implement this I had to break down the problem in multiple sub-problems which were solved as follows:
+**Implementation:** To implement this I had to break down the problem in multiple sub-problems which were solved as follows:
 
 i. Analyzed `datasets.py` to find how to access the raw 'sentence' column of csv for each batch of the dataloader easily. Found that we can use `batch['sents']`. This is crucial because I wanted to develop a system wherein I can get SWN scores for any seen/unseen datasets.
 
@@ -237,31 +262,38 @@ iv. Slight changes in the training loop to make sure that the raw sentences are 
 
 v. Installing NLTK on cluster: `setup_gwdg_nltk.sh`
 
-Results: Dev accuracy improved to 0.532 and became more stable during fine tuning so this was a very good change.
+**Results:** Dev accuracy improved to 0.532 and became more stable during fine tuning so this was a very good change.
 
-**4. Does the classification head architecture require complexity?**
+</details> 
+
+<h3>4. Does the classification head architecture require complexity?</h3>
+
+<details> 
 
 **Explanation:** The CLS token is mapped onto the classification head directly after concatenation of SWN scores. I thought maybe adding some layers in between will help learn even more complex relationships between 768 features from BERT and the additional SWN scores.
 
-**Experiment:** I tried two different architectures:
+**Implementation:** I tried two different architectures:
 - 770 → 128 → 16 → 5
 - 770 → 64 → 5
 
-But both performed poorly by reducing dev accuracy (0.49) so reverted back to simple 770 → 5.
+**Results:** But both performed poorly by reducing dev accuracy (0.49) so reverted back to simple 770 → 5.
 
-**5. Can we engineer new features from the SentiWordNet positive and negative scores to improve classification?**
+<h3>5. Can we engineer new features from the SentiWordNet positive and negative scores to improve classification?</h3>
 
 **Explanation:** Engineer 3 new features from pos_score and neg_score (strength, ratio, net)
 
-**Experiment:**
+**Implementation:**
 - sentiment_strength = avg_pos_score + avg_neg_score  # How strong the sentiment is
 - sentiment_ratio = avg_pos_score / (avg_neg_score + 1e-8) if avg_neg_score > 0 else 10  # Pos/Neg ratio
 - net_sentiment = avg_pos_score - avg_neg_score  # Net sentiment score
            
-Results: Dev accuracy stayed similar with no discernible improvements but still a decent addition to keep.
+**Results:** Dev accuracy stayed similar with no discernible improvements but still a decent addition to keep.
 
+</details> 
 
-**6. Is the SentiWordNetProcessor performing similarly on all classes?**
+<h3>6. Is the SentiWordNetProcessor performing similarly on all classes?</h3>
+
+<details> 
 
 **Explanation:** Error analysis revealed a significant performance disparity, with poorer accuracy on negative reviews (classes 0-1) compared to positive ones (classes 3-4). We hypothesized that this was due to the prevalence of negated positive statements (e.g., 'not good') in negative reviews, which our initial SentiWordNet processor misinterpreted as positive. To address this, we implemented a negation handling module inspired by the classic technique of Turney (2002). This module flips the positive and negative sentiment scores of a word if it is preceded by a negation term (e.g., 'not', 'no', 'never'), thereby correctly interpreting phrases like 'not good' as negative.
 
@@ -269,7 +301,7 @@ Citation:
 Thumbs Up or Thumbs Down? Semantic Orientation Applied to Unsupervised Classification of Reviews:
 https://aclanthology.org/P02-1053.pdf 
 
-**Experiment:** “Negation handling” functionality was added to the processor in and wrote a new class `SentiWordNetProcessor_NegHandling` which flips positive and negative scores of a word if the word is preceded by a negating word like “no”, “not”, “barely” etc. To determine if a given word is negated, I looked back 3 words in the text for a negating word.
+**Implementation:** “Negation handling” functionality was added to the processor in and wrote a new class `SentiWordNetProcessor_NegHandling` which flips positive and negative scores of a word if the word is preceded by a negating word like “no”, “not”, “barely” etc. To determine if a given word is negated, I looked back 3 words in the text for a negating word.
 
 My experimentation showed that negating (flipping) only on positive scores yielded slightly better results so in the finalized version I am only doing negation handling for words deemed as positive by SWN.
 
@@ -280,9 +312,13 @@ Error analysis also allowed me to look at the problem with more granularity and 
 
 These lists of words did not come from the SST data so there is no risk of introducing bias in the model. After close analysis of SWN scores of these words, I found some words (both negative and positive) whose SWN scores I did not agree with. I implemented an over-ride mechanism for these words in my processor. Lists of these words can be found in the `SentiWordNetProcessor_NegHandling` class. Effectively, the I am using a customized version of SentiWordNet for this problem from hereon.
 
-Result: Major improvement in dev accuracy observed.
+**Results:** Major improvement in dev accuracy observed.
 
-**7. Should we trust the minBERT model or the SWN scores equally?**
+</details> 
+
+<h3>7. Should we trust the minBERT model or the SWN scores equally?</h3>
+
+<details> 
 
 **Explanation:** The model has two distinct components that it uses to predict sentiment of a sentence:
 1. min BERT h_cls token’s 768 features
@@ -290,7 +326,7 @@ Result: Major improvement in dev accuracy observed.
 
 The weight of these two sources is equal at the moment but in reality one source must be better or worse than the other. How much do I trust each source is the million dollar question. My idea is to use a learned gating system to let the model dynamically decide how much to trust SWN vs BERT features for sentiment classification.
 
-**Experiment:** Instead of just concatenating SWN scores to h_cls, I introduced a simple learned gating system to let the model dynamically decide how much to trust SWN vs BERT features for each example.
+**Implementation:** Instead of just concatenating SWN scores to h_cls, I introduced a simple learned gating system to let the model dynamically decide how much to trust SWN vs BERT features for each example.
 
 It's a simple NN which takes in h_cls+SWN scores and outputs two weights (0.0 < weight < 1.0) using a sigmoid function. First weight for BERT features and second weight for the SWN scores.
 
@@ -300,10 +336,13 @@ The bert_weight is multiplied element-wise to 768 BERT features, and the swn_wei
 
 Lastly, instead of a sigmoid function, a softmax was also tried to make the weights sum up to 1.0 but it reduced dev accuracy slightly so sigmoid was chosen at the end. The sigmoid gives a 0-1 weight for each of BERT and SWN independent of each other.
 
-Result: Slight improvement in dev accuracy was observed.
+**Results:** Slight improvement in dev accuracy was observed.
 
+</details> 
 
-**8. Can we add one more lexical database’s sentiment scores in addition to SWN scores to see if it improves the model?**
+<h3>8. Can we add one more lexical database’s sentiment scores in addition to SWN scores to see if it improves the model?</h3>
+
+<details> 
 
 **Explanation:** VADER scores are at the SENTENCE level polarity scores. There are 4 components returned by polarity_scores():
 
@@ -316,24 +355,30 @@ Note: pos + neg + neu = 1.0 like the SWN scores
 
 Citation: https://www.researchgate.net/publication/381650914_Understanding_Sentiment_Analysis_with_VADER_A_Comprehensive_Overview_and_Application
 
-**Experiment:** The Valence Aware Dictionary and sEntiment Reasoner (VADER) scores are a document-level (sentence-level) polarity scores which describe positivity or negativity in sentiment of a text. Implementation was a much simpler activity because all the skeleton for the SWN scores was already set up. A new class `VADERProcessor` was written to extract these scores. The "neutral" vader score was not used due to same reason avg_obj_score from SWN was ommitted. Additionally, the gating mechanism was altered to cater to this novel, third type of features in addition to BERT and SWN. 
+**Implementation:** The Valence Aware Dictionary and sEntiment Reasoner (VADER) scores are a document-level (sentence-level) polarity scores which describe positivity or negativity in sentiment of a text. Implementation was a much simpler activity because all the skeleton for the SWN scores was already set up. A new class `VADERProcessor` was written to extract these scores. The "neutral" vader score was not used due to same reason avg_obj_score from SWN was ommitted. Additionally, the gating mechanism was altered to cater to this novel, third type of features in addition to BERT and SWN. 
 
 NEW Gating mechanism Architecture: (768+8) → 256 → 3
 
-Result: Further improvement in dev accuracy was observed.
+**Results:** Further improvement in dev accuracy was observed.
 
-**9. Adding more training data**
+</details> 
+
+<h3>9. Adding more training data</h3>
+
+<details> 
 
 **Explanation:** I tried to find open-source, fine-grained sentiment movie review datasets on the internet but was unsuccessful. The closest usable thing I found was the binary sentiment IMDB movie review dataset on kaggle with https://www.kaggle.com/datasets/lakshmi25npathi/imdb-dataset-of-50k-movie-reviews with 50000 examples. 
 
-**Experiment:** I changed the sentiments from positive and negative to 4 and 0 respectively, changed the column names, appended the dataset to my training data. The simple data manipulation and saving can be seen in the `./data_extra/data_wrangling.ipynb`. I was not expecting good results because:
+**Implementation:** I changed the sentiments from positive and negative to 4 and 0 respectively, changed the column names, appended the dataset to my training data. The simple data manipulation and saving can be seen in the `./data_extra/data_wrangling.ipynb`. I was not expecting good results because:
 - The sentiments in the new data were not fine-grained which made the extra IMDB data different from my problem at hand.
 - Not all examples were usable for me because the average movie-review length was much bigger in the IMDB dataset which was causing out-of-memory errors during training so I was able to use only 1856 rows from the IMDB data for my training.
 
-At the end the dev accuracy dropped to 0.503 so I reverted to my original training data.
+**Results:** At the end the dev accuracy dropped to 0.503 so I reverted to my original training data. I did not add this section in the summary at the end.
 
+</details> 
 
-**Summary of Experiments:**
+<h3>Summary of Experiments:</h3>
+
 | Sno.| Experiment | Best Dev Accuracy |
 |---|--------------|-------------------|
 | 0 | Baseline | 0.521 |
@@ -354,8 +399,7 @@ At the end the dev accuracy dropped to 0.503 so I reverted to my original traini
 - dropout rate: `0.20`
 - batch size: `64`
 
-
-
+The final model reaches peak dev accuracy of 0.544 in the 3rd epoch and saves itself. Beyond the 3rd epoch it just overfits to training data as highlighted in the experiment #2.
 
 
 
