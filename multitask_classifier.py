@@ -86,20 +86,7 @@ class MultitaskBERT(nn.Module):
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
         
-            
-    def mean_pooling(self, model_output, attention_mask):
-        """
-        Performs mean pooling on the token embeddings, taking into account the attention mask.
-        model_output: last_hidden_state from BERT
-        attention_mask: attention mask for the input
-        Returns: pooled sentence embedding of size [batch_size, hidden_size]
-        """
-        token_embeddings = model_output["last_hidden_state"]
-        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-        sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
-        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-        return sum_embeddings / sum_mask
-
+           
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
@@ -110,10 +97,6 @@ class MultitaskBERT(nn.Module):
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        if args.task == "qqp":
-            embeddings = self.mean_pooling(outputs, attention_mask)
-            embeddings = nn.functional.layer_norm(embeddings, normalized_shape=embeddings.size()[1:])
-            return embeddings
         return outputs["pooler_output"] 
     
     def forward_etpc(self, input_ids, attention_mask):
@@ -469,15 +452,28 @@ def train_multitask(args):
                 b_labels = b_labels.to(device)
 
                 optimizer.zero_grad()
-                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
-                loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
+                u, v = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2, return_embeddings=True)
+
+                u_norm = F.normalize(u, p=2, dim=1)
+                v_norm = F.normalize(v, p=2, dim=1)
+                similarity_matrix = torch.mm(u_norm, v_norm.T)
+                temperature = 0.05
+                similarity_matrix = similarity_matrix / temperature
+                labels = torch.arange(similarity_matrix.size(0)).to(similarity_matrix.device)
+                contrastive_loss = F.cross_entropy(similarity_matrix, labels)
+
+                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2, return_embeddings=False)
+
+                cls_loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
+
+                total_loss = cls_loss + 0.1 * contrastive_loss  # Contrastive Loss als Regularizer
 
                 if config.option == "finetune":
-                    loss.backward()
+                    total_loss.backward()
                     optimizer.step()
 
-                train_loss += loss.item()
-                num_batches += 1
+                train_loss += total_loss.item()
+
         
         ## BONUS TASK
         # etpc training
