@@ -152,11 +152,17 @@ class MultitaskBERT(nn.Module):
         Dataset: Quora
         """
 
-        input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
-        attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
-        mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
-        return self.paraphrase_classifier(mean_embedding).squeeze(-1)
-    
+        u = self.forward(input_ids_1, attention_mask_1)
+        v = self.forward(input_ids_2, attention_mask_2)
+
+        u = self.paraphrase_dropout(u)
+        v = self.paraphrase_dropout(v)
+
+        # Nur für Inferenz: Der originale Pfad zur Klassifikation
+        abs_diff = torch.abs(u - v)
+        combined_features = torch.cat([u, v, abs_diff], dim=-1)
+        logits = self.paraphrase_classifier(combined_features).squeeze(-1)
+        return logits
 
     def predict_paraphrase_types(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
