@@ -31,7 +31,7 @@ echo "Latest Commit: $(git rev-parse --short HEAD)"
 echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Define parameter ranges - focus on most promising values
-ALPHAS=(0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0)
+ALPHAS=(0.925 0.95 0.975)
 BATCH_SIZES_SBERT=(5 10 15 20 50 80 110 150 180)
 BATCH_SIZES_SIMCSE=(5 10 15 20 30 50 70 90)
 SEEDS=(11711 11712 11713 11714 11715 11716 11717 11718 11719 11720 
@@ -66,52 +66,52 @@ for alpha in "${ALPHAS[@]}"; do
     done
 done
 
-# Run SimCSE-only experiments
-echo "Running SimCSE-only experiments"
-for batch_size in "${BATCH_SIZES_SIMCSE[@]}"; do
-    for seed in "${SEEDS[@]}"; do
-        echo "Running SimCSE-only batch_size=$batch_size, seed=$seed"
-        python multitask_classifier.py \
-            --task sts \
-            --option finetune \
-            --sts_training_type simcse \
-            --forward_type raw_cls \
-            --use_pretrained_simcse \
-            --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" \
-            --max_batches "$batch_size" \
-            --epochs 10 \
-            --batch_size 64 \
-            --lr 3e-5 \
-            --seed "$seed" \
-            --use_gpu \
-            --save_results_only \
-            --filepath "/dev/null"
-        echo "Completed SimCSE-only batch_size=$batch_size, seed=$seed"
-    done
-done
+# # Run SimCSE-only experiments
+# echo "Running SimCSE-only experiments"
+# for batch_size in "${BATCH_SIZES_SIMCSE[@]}"; do
+#     for seed in "${SEEDS[@]}"; do
+#         echo "Running SimCSE-only batch_size=$batch_size, seed=$seed"
+#         python multitask_classifier.py \
+#             --task sts \
+#             --option finetune \
+#             --sts_training_type simcse \
+#             --forward_type raw_cls \
+#             --use_pretrained_simcse \
+#             --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" \
+#             --max_batches "$batch_size" \
+#             --epochs 10 \
+#             --batch_size 64 \
+#             --lr 3e-5 \
+#             --seed "$seed" \
+#             --use_gpu \
+#             --save_results_only \
+#             --filepath "/dev/null"
+#         echo "Completed SimCSE-only batch_size=$batch_size, seed=$seed"
+#     done
+# done
 
-# Run SBERT-only experiments
-echo "Running SBERT-only experiments"
-for batch_size in "${BATCH_SIZES_SBERT[@]}"; do
-    for seed in "${SEEDS[@]}"; do
-        echo "Running SBERT-only batch_size=$batch_size, seed=$seed"
-        python multitask_classifier.py \
-            --task sts \
-            --option finetune \
-            --sts_training_type sbert \
-            --forward_type sbert_mean \
-            --use_pretrained_simcse \
-            --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" \
-            --max_batches "$batch_size" \
-            --epochs 3 \
-            --batch_size 32 \
-            --lr 1e-5 \
-            --seed "$seed" \
-            --use_gpu \
-            --save_results_only \
-            --filepath "/dev/null"
-        echo "Completed SBERT-only batch_size=$batch_size, seed=$seed"
-    done
-done
+# # Run SBERT-only experiments
+# echo "Running SBERT-only experiments"
+# for batch_size in "${BATCH_SIZES_SBERT[@]}"; do
+#     for seed in "${SEEDS[@]}"; do
+#         echo "Running SBERT-only batch_size=$batch_size, seed=$seed"
+#         python multitask_classifier.py \
+#             --task sts \
+#             --option finetune \
+#             --sts_training_type sbert \
+#             --forward_type sbert_mean \
+#             --use_pretrained_simcse \
+#             --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" \
+#             --max_batches "$batch_size" \
+#             --epochs 3 \
+#             --batch_size 32 \
+#             --lr 1e-5 \
+#             --seed "$seed" \
+#             --use_gpu \
+#             --save_results_only \
+#             --filepath "/dev/null"
+#         echo "Completed SBERT-only batch_size=$batch_size, seed=$seed"
+#     done
+# done
 
 echo "All parameter sweeps with 25 seeds completed!"

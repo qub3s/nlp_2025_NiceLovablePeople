@@ -1,0 +1,10 @@
+Task: sts
+Training type: simcse
+Seed: 11714
+Epochs: 10
+Learning rate: 3e-05
+Batch size: 64
+Alpha: 0.5
+Max batches: 30.0
+Final correlation: 0.7676
+Timestamp: 2025-09-06T22:49:02.971926

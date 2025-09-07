@@ -814,8 +814,6 @@ def train_multitask(args):
 
         train_loss = train_loss / num_batches
 
-        # model.eval()
-        # with torch.no_grad():
 
         #     # Evaluation on dev set
         #     if config.sts_training_type == "standard":
@@ -976,7 +974,7 @@ def get_args():
 
     # Which model to load
     parser.add_argument("--use_pretrained_simcse", action="store_true", 
-                       help="Use pre-trained SimCSE model instead of base BERT")
+                        help="Use pre-trained SimCSE model instead of base BERT", default=False)
     parser.add_argument("--simcse_model_path", type=str, default="models/simcse_supervised/best_model_epoch3_corr0.7210.pt",
                        help="Path to your pre-trained SimCSE model")
     
@@ -1016,7 +1014,7 @@ def get_args():
         type=str,
         help="Type of forward function: pooler or raw_cls",
         choices=("pooler", "raw_cls", "sbert_mean", "simcse_sbert"),
-        default="raw_cls",
+        default="pooler",
     )
 
     # NEW: Add STS training type argument
