@@ -120,7 +120,9 @@ class MultitaskBERT(nn.Module):
         elif config.regressor_type == "sbert":
             self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
 
-        
+        # SST
+        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
+        self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
         # QQP
         self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1) 
