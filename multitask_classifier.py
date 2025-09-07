@@ -79,8 +79,8 @@ class MultitaskBERT(nn.Module):
         self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
 
         # QQP
+        self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
-        self.paraphrase_classifier = nn.Dropout(config.hidden_dropout_prob)
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -452,7 +452,7 @@ def train_multitask(args):
                 b_labels = b_labels.to(device)
 
                 optimizer.zero_grad()
-                logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
                 loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
 
                 if config.option == "finetune":

@@ -170,6 +170,21 @@ It indicates that most classes are very rare (mean values close to 0.01-0.05) an
 **Improvements:**
 For the second part I will do hyperparameter finetuning to counter overfitting and find the best local minima. Also I will try to impliment the "Siamese + interaction" recipe used by DeBErta on ETPC from the GippLab group (Paraphrase Types for Generation and Detection, Wahle et al.) and other improvements from Chapter 7.
 
+
+## Results Part 2
+
+### Quora Question Pairs (QQP) - Question similarity
+
+#### Experiments 
+
+**Baseline**:
+| Model|Acc|Time|
+|:---:|:---:|:---:|
+|Baseline|0.870|15min|
+
+*****
+
+
 ### Grete Cluster
 To run the tasks on the Grete cluster we adapted and used the `run_train.sh` script given to us.
 
