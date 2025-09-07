@@ -175,14 +175,82 @@ For the second part I will do hyperparameter finetuning to counter overfitting a
 
 ### Quora Question Pairs (QQP) - Question similarity
 
-#### Experiments 
 
-**Baseline**:
-| Model|Acc|Time|
-|:---:|:---:|:---:|
-|Baseline|0.870|15min|
+<h3>Layer Change</h3>
+<details> 
 
-*****
+**Explanation:**
+The original model used a single linear layer to classify paraphrases, which is a simplistic approach. The improved version replaces this with a **multi-layered classifier** to learn more complex patterns. This change is based on the principle that a deeper network can capture more nuanced relationships between the sentence embeddings, leading to better performance. The addition of a **GELU activation function** and an extra dropout layer introduces non-linearity and helps prevent overfitting.
+
+
+
+**Implementation**
+
+The single `nn.Linear` layer for the `paraphrase_classifier` was replaced with a `nn.Sequential` block. This new architecture consists of two linear layers, a GELU activation, and a dropout layer. The first linear layer transforms the concatenated BERT embeddings (`BERT_HIDDEN_SIZE`) into a hidden size of 768, while the second layer outputs the final logit. To ensure stable training, the weights of both linear layers were initialized using **Xavier uniform initialization**, and their biases were set to zero.
+
+**Results:**
+</details> 
+
+<h3>Logit return</h3>
+<details> 
+
+**Explanation**
+
+The previous model's approach to paraphrase detection was limited. It concatenated the input sentences and processed them as a single sequence, relying on the BERT model to create a single, combined embedding. This method may not be optimal for capturing the individual nuances of each sentence and their relationship.
+
+The new implementation improves on this by treating the sentences separately. By generating individual embeddings for each sentence (u and v), the model can explicitly compare them. The core of this improvement is the **S.I.A.M.E.S.E. (Sentence-pair similarity)** approach, which uses three distinct features for classification:
+
+1. The embedding of the first sentence (u).
+2. The embedding of the second sentence (v).
+3. The absolute difference between the two embeddings (∣u−v∣).
+
+This triplet of features allows the model to learn a richer representation of the relationship between the sentences. It gives the model a more explicit signal about the magnitude of the differences between the two sentence vectors, which is a powerful indicator of their semantic similarity. This approach should lead to a **more robust and accurate model** for paraphrase detection.
+
+**Implementation**
+
+The `predict_paraphrase` function was modified to first get the individual embeddings for each sentence, `u` and `v`, by calling `self.forward` on `input_ids_1` and `input_ids_2` separately. Dropout was applied to each embedding to prevent overfitting.
+
+After obtaining the individual embeddings, the absolute difference `abs_diff = torch.abs(u - v)` was calculated. Finally, the three feature vectors—`u`, `v`, and `abs_diff`—were concatenated along the last dimension to form `combined_features`. This combined vector was then passed to the `paraphrase_classifier`, which was updated in the `__init__` function to accept an input size of `BERT_HIDDEN_SIZE * 3` to match the new feature representation. The output of the classifier is a single logit, which is then used for the final binary classification.
+
+**Results:**
+</details> 
+<h3>MeanPooling</h3>
+<details> 
+
+**Explanation**
+
+The original model used the `[CLS]` token's embedding from BERT as the sentence representation. While this is a common practice, this single vector might not always capture the full semantic meaning of the entire sentence, especially for longer texts.
+
+The new implementation improves this by using **mean pooling** to create the sentence embedding. Instead of relying on a single token, mean pooling computes the average of all the token embeddings in a sentence. This approach ensures that the representations of all tokens contribute to the final sentence embedding, providing a more comprehensive summary of the sentence's meaning. We expect this to result in a more robust and semantically richer embedding, which should lead to improved performance on the paraphrase detection task.
+
+
+**Implementation**
+
+A new `mean_pooling` function was implemented to calculate the average of the token embeddings. This function takes the `last_hidden_state` from the BERT output and the `attention_mask`. The attention mask is used to correctly handle sentences of varying lengths by ignoring padding tokens in the average calculation.
+
+Inside the `forward` function, a conditional check was added for the "qqp" task. For this task, instead of returning the `pooler_output`, the `mean_pooling` function is called to get the sentence embedding. An additional **Layer Normalization** step is applied to the resulting embedding to stabilize the training process and potentially improve model performance. For other tasks, the model continues to use the `pooler_output` as before.
+
+**Results:**
+</details> 
+<h3>Layer Change</h3>
+<details> 
+
+</details> 
+<h3>Layer Change</h3>
+<details> 
+
+</details> 
+
+
+<h3>Summary of Experiments:</h3>
+
+| Sno.| Experiment | Best Dev Accuracy |
+|---|--------------|-------------------|
+| 0 | Layer Change | 0.521 |
+| 1 | Logit return | 0.520 |
+| 2 | MeanPooling | 0.519 |
+| 3 | Cross Entropy Loss | 0.532 |
+
 
 
 ### Grete Cluster

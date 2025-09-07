@@ -485,7 +485,7 @@ def train_multitask(args):
                     optimizer.step()
 
                 train_loss += total_loss.item()
-
+                num_batches += 1
         
         ## BONUS TASK
         # etpc training
