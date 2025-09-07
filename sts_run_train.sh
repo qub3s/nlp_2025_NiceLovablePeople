@@ -37,33 +37,33 @@ BATCH_SIZES_SIMCSE=(5 10 15 20 30 50 70 90)
 SEEDS=(11711 11712 11713 11714 11715 11716 11717 11718 11719 11720 
        11721 11722 11723 11724 11725)
 
-# Create results directory
-echo "Starting parameter sweeps with 25 seeds"
+# # Create results directory
+# echo "Starting parameter sweeps with 25 seeds"
 
-# Run simcse-sbert experiments
-echo "Running simcse-sbert experiments"
-for alpha in "${ALPHAS[@]}"; do
-    for seed in "${SEEDS[@]}"; do
-        echo "Running simcse-sbert alpha=$alpha, seed=$seed"
-        python multitask_classifier.py \
-            --task sts \
-            --option finetune \
-            --sts_training_type simcse_sbert \
-            --forward_type simcse_sbert \
-            --use_pretrained_simcse \
-            --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" \
-            --max_batches 10 \
-            --epochs 5 \
-            --batch_size 64 \
-            --lr 2e-5 \
-            --alpha "$alpha" \
-            --seed "$seed" \
-            --use_gpu \
-            --save_results_only \
-            --filepath "/dev/null"
-        echo "Completed simcse-sbert alpha=$alpha, seed=$seed"
-    done
-done
+# # Run simcse-sbert experiments
+# echo "Running simcse-sbert experiments"
+# for alpha in "${ALPHAS[@]}"; do
+#     for seed in "${SEEDS[@]}"; do
+#         echo "Running simcse-sbert alpha=$alpha, seed=$seed"
+#         python multitask_classifier.py \
+#             --task sts \
+#             --option finetune \
+#             --sts_training_type simcse_sbert \
+#             --forward_type simcse_sbert \
+#             --use_pretrained_simcse \
+#             --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" \
+#             --max_batches 10 \
+#             --epochs 5 \
+#             --batch_size 64 \
+#             --lr 2e-5 \
+#             --alpha "$alpha" \
+#             --seed "$seed" \
+#             --use_gpu \
+#             --save_results_only \
+#             --filepath "/dev/null"
+#         echo "Completed simcse-sbert alpha=$alpha, seed=$seed"
+#     done
+# done
 
 # # Run SimCSE-only experiments
 # echo "Running SimCSE-only experiments"

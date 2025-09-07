@@ -849,7 +849,7 @@ def train_multitask(args):
 
         if dev_acc > best_dev_acc:
             best_dev_acc = dev_acc
-            save_model(model, optimizer, args, config, args.filepath)
+            #save_model(model, optimizer, args, config, args.filepath)
 
     if args.task == "sts":
         return best_dev_acc
