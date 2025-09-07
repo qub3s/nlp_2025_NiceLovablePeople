@@ -25,7 +25,8 @@ from nltk.corpus import sentiwordnet as swn
 from nltk.corpus import wordnet as wn
 from nltk.tokenize import word_tokenize
 from nltk import pos_tag as treebank_pos_tag
-
+from nltk.stem import WordNetLemmatizer
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 nltk.download('punkt')
 nltk.download('punkt_tab') ####
@@ -33,5 +34,6 @@ nltk.download('averaged_perceptron_tagger_eng') ####
 nltk.download('averaged_perceptron_tagger')
 nltk.download('wordnet')
 nltk.download('sentiwordnet')
+nltk.download('vader_lexicon')
 EOF
 
