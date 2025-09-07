@@ -19,8 +19,6 @@ def extract_results_from_filenames(file_pattern="*.txt"):
         try:
             filename = os.path.basename(file_path)
             print(f"Processing: {filename}")
-            
-            # Extract seed, alpha, batch, and correlation using regex
             pattern = r"simcse_seed_(\d+)_alpha_0\.5_batch_([\d.]+)_corr_([\d.]+)\.txt"
             match = re.search(pattern, filename)
             
@@ -75,19 +73,17 @@ def create_batch_visualizations(results_df, output_dir="batch_analysis_plots"):
     """
     os.makedirs(output_dir, exist_ok=True)
     
-    # Set style to match reference plots
     plt.style.use('default')
     plt.rcParams['font.family'] = 'serif'
     plt.rcParams['font.size'] = 12
-    
-    # Calculate statistics for each batch size
+
+    # Batch size
     batch_stats = results_df.groupby('batch')['correlation'].agg(['mean', 'std', 'count'])
     batch_stats['ci'] = 1.96 * batch_stats['std'] / np.sqrt(batch_stats['count'])
-    
-    # Get unique batch values and sort them
+
     batches = sorted(results_df['batch'].unique())
     
-    # Calculate means and confidence intervals for each batch size
+    # Confidence intervals
     means = []
     ci_lower = []
     ci_upper = []
@@ -99,18 +95,19 @@ def create_batch_visualizations(results_df, output_dir="batch_analysis_plots"):
         ci_lower.append(lower)
         ci_upper.append(upper)
 
-    # Plot 1: Batch vs Scores (mean with error bars)
-    plt.figure(figsize=(10, 6))
+    # Plot Batch vs Scores
+    plt.figure(figsize=(8, 4))
 
     plt.fill_between(batch_stats.index, 
                     batch_stats['mean'] - batch_stats['ci'], 
                     batch_stats['mean'] + batch_stats['ci'], 
                     alpha=0.3, color='green', label='95% CI')
 
-    # Plot the mean line on top
     plt.plot(batch_stats.index, batch_stats['mean'], 
             'o-', color= 'green', linewidth=2, markersize=6, 
             label='Mean Correlation')
+    
+    plt.xscale('log')
 
     plt.xlabel('Number of Batches', fontsize=12)
     plt.ylabel('Pearson Correlation', fontsize=12)
@@ -124,16 +121,14 @@ def create_batch_visualizations(results_df, output_dir="batch_analysis_plots"):
                 dpi=300, bbox_inches='tight', pad_inches=0.1)
     plt.close()
     
-    # Plot 2: Individual points with mean and CI
+    # Plot Individual points with mean and CI
     plt.figure(figsize=(12, 8))
     
-    # Plot individual points with jitter
     for i, batch in enumerate(batches):
         batch_data = results_df[results_df['batch'] == batch]['correlation']
         jitter = np.random.normal(0, 0.05, len(batch_data))
         plt.scatter([i + j for j in jitter], batch_data, alpha=0.6, s=40)
     
-    # Plot means and confidence intervals
     plt.errorbar(range(len(batches)), means, yerr=[np.array(means)-np.array(ci_lower), 
                                                   np.array(ci_upper)-np.array(means)], 
                  fmt='o-', color='red', capsize=5, capthick=2, markersize=8, linewidth=2,
@@ -147,16 +142,11 @@ def create_batch_visualizations(results_df, output_dir="batch_analysis_plots"):
     plt.grid(True, alpha=0.3)
     plt.savefig(f'{output_dir}/simcse_batch_individual_points_ci.png', dpi=300, bbox_inches='tight')
     plt.close()
-
-def main():
-    """Main analysis function"""
-    folder_path = "simcse_data"
-    file_pattern = os.path.join(folder_path, "*.txt")
-    
-    results_df = extract_results_from_filenames(file_pattern)
-    
-    # Create both types of visualizations
-    create_batch_visualizations(results_df)
+   
 
 if __name__ == "__main__":
-    main()
+    """Main analysis function"""
+    folder_path = "simcse_data"
+    file_pattern = os.path.join(folder_path, "*.txt") 
+    results_df = extract_results_from_filenames(file_pattern)
+    create_batch_visualizations(results_df)

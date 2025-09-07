@@ -17,8 +17,6 @@ def extract_results_from_filenames(file_pattern="*.txt"):
     for file_path in files:
         try:
             filename = os.path.basename(file_path)
-            
-            # Extract seed, alpha, and correlation using regex
             pattern = r"seed_(\d+)_alpha_([\d.]+)_batch_[\d.]+_corr_([\d.]+)\.txt"
             match = re.search(pattern, filename)
             
@@ -64,8 +62,7 @@ def create_alpha_visualizations(results_df, output_dir="alpha_analysis_plots"):
     Create visualizations for alpha parameter analysis with confidence intervals
     """
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Set style to match reference plots
+
     plt.style.use('default')
     plt.rcParams['font.family'] = 'serif'
     plt.rcParams['font.size'] = 12
@@ -89,7 +86,7 @@ def create_alpha_visualizations(results_df, output_dir="alpha_analysis_plots"):
         ci_lower.append(lower)
         ci_upper.append(upper)
 
-    # Plot 2: Alpha vs Scores (mean with error bars)
+    # Plot Alpha vs Scores
     plt.figure(figsize=(8, 5))
 
     plt.fill_between(alpha_stats.index, 
@@ -97,9 +94,8 @@ def create_alpha_visualizations(results_df, output_dir="alpha_analysis_plots"):
                     alpha_stats['mean'] + alpha_stats['ci'], 
                     alpha=0.3, color='#1f77b4', label='95% CI')
 
-    # Plot the mean line on top
     plt.plot(alpha_stats.index, alpha_stats['mean'], 
-            'o-', color='#1f77b4', linewidth=2, markersize=6, 
+            'o-', color="blue", linewidth=2, markersize=6, 
             label='Mean Correlation')
 
     plt.xlabel('Alpha Value', fontsize=12)
@@ -114,16 +110,14 @@ def create_alpha_visualizations(results_df, output_dir="alpha_analysis_plots"):
             dpi=300, bbox_inches='tight', pad_inches=0.1)
     plt.close()
     
-    # Plot 3: Individual points with mean and CI
+    # Plot Individual points with mean and CI
     plt.figure(figsize=(12, 8))
     
-    # Plot individual points with jitter
     for i, alpha in enumerate(alphas):
         alpha_data = results_df[results_df['alpha'] == alpha]['correlation']
         jitter = np.random.normal(0, 0.05, len(alpha_data))
         plt.scatter([i + j for j in jitter], alpha_data, alpha=0.6, s=40)
-    
-    # Plot means and confidence intervals
+
     plt.errorbar(range(len(alphas)), means, yerr=[np.array(means)-np.array(ci_lower), 
                                                  np.array(ci_upper)-np.array(means)], 
                  fmt='o-', color='red', capsize=5, capthick=2, markersize=8, linewidth=2,
@@ -138,16 +132,15 @@ def create_alpha_visualizations(results_df, output_dir="alpha_analysis_plots"):
     plt.savefig(f'{output_dir}/alpha_individual_points_ci.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-def main():
+    
+
+if __name__ == "__main__":
     """Main analysis function"""
     folder_path = "simcse_sbert_data"
     file_pattern = os.path.join(folder_path, "*.txt")
-    
+
     results_df = extract_results_from_filenames(file_pattern)
-    
+
     print(f"Extracted {len(results_df)} results")
     print(f"Alphas tested: {sorted(results_df['alpha'].unique())}")
     create_alpha_visualizations(results_df)
-
-if __name__ == "__main__":
-    main()
