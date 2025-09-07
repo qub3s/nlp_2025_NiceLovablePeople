@@ -39,9 +39,12 @@ job_id, changes, dev_acc, time, error
 10783723, maxbatch no epochs 4 mehr zeit eig,0.835 (beste nach 4),104min,0
 10783727, 1 epoche bs 64,0.797,24min,0
 10783732, 1 epoche BS 128,0.788,25min,0
-10784088, BS 32 LR 5e-5,0,0,0
-10784094, BS 32 LR 1e-4,0,0,0
+10784088, BS 32 LR 5e-5,0.824,66min,0
+10784094, BS 32 LR 1e-4,0.815,64,0
 
 ####### ========= Testing
-10784204, Orginal Code pretrain,0,0,0
-10784291, Orginal Code finetune,0,0,0
+10784204, Orginal Code pretrain,0,11min,error
+10784291, Orginal Code finetune,0,0,error
+10784296, Orginal Code sollte laufen,0.862,?,0
+10784297, OC 6 Epochen,0,0,0
+10784378, OC similiarity function anstatt parallel,0.795,16min,0
