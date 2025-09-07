@@ -7,6 +7,7 @@
 logdir
 models
 slurm_files
+runs.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
