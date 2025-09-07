@@ -7,7 +7,6 @@
 logdir
 models
 slurm_files
-data_extra
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -177,4 +176,3 @@ test_run_hamza.py
 notes.txt
 bert_georg.py
 .DS_Store
-data_extra
