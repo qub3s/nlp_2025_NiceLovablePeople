@@ -1064,7 +1064,7 @@ def get_args():
     # Which model to load
     parser.add_argument("--use_pretrained_simcse", action="store_true", 
                         help="Use pre-trained SimCSE model instead of base BERT", default=False)
-    parser.add_argument("--simcse_model_path", type=str, default="models/simcse_supervised/best_model_epoch3_corr0.7210.pt",
+    parser.add_argument("--simcse_model_path", type=str, default="models/simcse_supervised/best_model_epoch3_corr0.8216.pt",
                        help="Path to your pre-trained SimCSE model")
     
     # Training task
