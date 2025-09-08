@@ -44,6 +44,37 @@ class Focal_Loss(nn.Module):
 
         return fl_sum
 
+class Weight_based_sampler(torch.utils.data.Sampler):
+    def __init__(self, data, distribution, seed=42):
+
+        data = list(data["paraphrase_type_ids"].apply(eval)) 
+
+        print(type(data))
+        print(type(distribution))
+
+        self.data = data
+        self.seed = seed
+
+        calc = lambda targets, distro: sum( x * y for x, y in zip(targets, distro)) / sum(targets)
+
+        prob = []
+        for x in data:
+            prob.append(calc(x, distribution))
+
+        s_prob = sum(prob)
+
+        prob = [ x / s_prob for x in prob]
+        print(prob[:10])
+
+        self.probability = prob
+
+    def __len__(self):
+        return len(self.data)
+
+    def __iter__(self):
+        iter_list = np.random.choice(np.arange(len(self)), size=len(self), replace=True, p=self.probability)
+
+        return iter(iter_list)
 
 class BartWithClassifier(nn.Module):
     def __init__(self, num_labels=26):
@@ -77,30 +108,7 @@ class BartWithClassifier(nn.Module):
 
         return probabilities
 
-def transform_data(dataset, max_length=512, shuffle=True):
-    """
-    dataset: pd.DataFrame
-
-    Turn the data to the format you want to use.
-
-    1. Extract the sentences from the dataset. We recommend using the already split
-    sentences in the dataset.
-    2. Use the AutoTokenizer from_pretrained to tokenize the sentences and obtain the
-    input_ids and attention_mask.
-    3. Currently, the labels are in the form of [6, 6, 6, 25, 25, 29]. This means that
-    the sentence pair contains type 6, 25, and 29. Turn this into a binary form, where the
-    label becomes [0, 0, 0, 0, 0, 1, ..., 1, 0, 0, 1, 0, 0].
-    IMPORTANT: You will find that the dataset contains types up to 31, but some are not
-    assigned. You need to drop 12, 19, 20, 23 and 27 when creating the binary labels.
-    This way you should end up with a binary label of size 26.     
-    Be careful that the test-student.csv does not
-    have the paraphrase_types column. You should return a DataLoader without the labels.
-    4. Use the input_ids, attention_mask, and binary labels to create a TensorDataset.
-    Return a DataLoader with the TensorDataset. You can choose a batch size of your
-    choice.
-    """
-    #raise NotImplementedError
-
+def transform_data(dataset, max_length=512, shuffle=True, custom_sampler=None, class_distribution=None, ):
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", add_prefix_space=True)
 
     # Tokenize the sentences
@@ -109,6 +117,8 @@ def transform_data(dataset, max_length=512, shuffle=True):
 
     # Tokenize the sentences
     token = tokenizer(s1, s2, is_split_into_words=True, padding=True, return_tensors="pt")
+    inp_ids = list(token["input_ids"])
+    att_mask = list(token["attention_mask"])
 
     if("paraphrase_type_ids" in dataset.keys()):
         # Read the solution labels
@@ -124,16 +134,69 @@ def transform_data(dataset, max_length=512, shuffle=True):
             oh = nn.functional.one_hot(torch.tensor(x), 32)[:, mask]
             oh = torch.any(oh, dim=0)
             one_hot.append(oh)
+
+        print("len: ", len(one_hot))
         
+        length_one_hot = len(one_hot)
+        replication = [0] * 26
+
+        for x in one_hot:
+            if x[8] != 0:
+                print("Exists: ",x)
+        
+        if class_distribution is not None:
+            start_frequencies = class_distribution.copy()
+            m = max(class_distribution)
+            max_i = class_distribution.index(m)
+
+            while min(class_distribution) <= 0.3 * m:
+                min_i = class_distribution.index(min(class_distribution))
+                idx = random.randint(0, len(class_distribution)-1)
+
+                
+                print(replication[min_i]/start_frequencies[min_i])
+                if replication[min_i]/start_frequencies[min_i] > 40:
+                    print("blocked")
+                    class_distribution[min_i] += 1
+                else:
+                    old_idx = idx
+
+                    while one_hot[idx][min_i].item() == False:
+                        idx -= 1
+
+                        if idx == -1:
+                            idx += length_one_hot
+
+                    
+                    replication[min_i] += 1
+                    print(replication)
+                    one_hot.append(one_hot[idx])
+                    inp_ids.append(inp_ids[idx])
+                    att_mask.append(att_mask[idx])
+
+                    class_distribution[min_i] += 1
+
         one_hot = torch.stack(one_hot)
+        inp_ids = torch.stack(inp_ids)
+        att_mask = torch.stack(att_mask)
         
         # create the Dataset and the Dataloader
-        ds = TensorDataset(token["input_ids"], token["attention_mask"], one_hot)
+        ds = TensorDataset(inp_ids, att_mask, one_hot)
         dl = DataLoader(ds, batch_size = batch_size, shuffle=shuffle)
+
+        if custom_sampler is None:
+            dl = DataLoader(ds, batch_size = batch_size, shuffle=shuffle)
+        else:
+            dl = DataLoader(ds, batch_size = batch_size, sampler=custom_sampler)
+
     else:
         # create the Dataset and the Dataloader
         ds = TensorDataset(token["input_ids"], token["attention_mask"])
-        dl = DataLoader(ds, batch_size = batch_size, shuffle=shuffle)
+
+        if custom_sampler is None:
+            dl = DataLoader(ds, batch_size = batch_size, shuffle=shuffle)
+        else:
+            dl = DataLoader(ds, batch_size = batch_size, sampler=custom_sampler)
 
     return dl 
 
@@ -153,8 +216,8 @@ def train_model(model, train_data, dev_data, device, epochs=5, lr=lr, class_freq
 
     # create optimizer, loss_fn 
     optimizer = AdamW(model.parameters(), lr=lr)
-    #loss_fn = nn.BCELoss()
-    loss_fn = Focal_Loss(class_frequencies, 2)
+    loss_fn = nn.BCELoss()
+    #loss_fn = Focal_Loss(class_frequencies, 2)
     early_stopping = EarlyStopping("models/pd_model.pth", patience=5, verbose=False, delta=0)
     model = model.to(device)
 
@@ -401,7 +464,7 @@ def get_args():
     return args
 
 
-def finetune_paraphrase_detection(args):
+def finetune_paraphrase_detection(args, iter_x):
     model = BartWithClassifier()
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
     model.to(device)
@@ -413,7 +476,9 @@ def finetune_paraphrase_detection(args):
     train_dataset_label = []
     train_data_class_distribution = [0] * 32 
 
-    for x in list(train_dataset["paraphrase_type_ids"].apply(eval)):
+    train_ds, val_ds = sklearn.model_selection.train_test_split(train_dataset, test_size=0.25)
+
+    for x in list(train_ds["paraphrase_type_ids"].apply(eval)):
         train_dataset_label.append(set(x))
 
     for td in train_dataset_label:
@@ -423,15 +488,17 @@ def finetune_paraphrase_detection(args):
 
     train_data_class_distribution = [ train_data_class_distribution[x] for x in range(len(train_data_class_distribution)) if x not in [0, 12, 19, 20, 23, 27]]
 
-    inverse_relative_class_frequencies = [1 / (x + 1e-8)**(1/4) for x in train_data_class_distribution]
-    
-    print(train_data_class_distribution)
+    inverse_relative_class_frequencies = [ 1 / (x + 1e-8)**(1/iter_x) for x in train_data_class_distribution]
 
+    rcf = [x / sum(inverse_relative_class_frequencies) for x in inverse_relative_class_frequencies]
+    
     # TODO You might do a split of the train data into train/validation set here
     # (or in the csv files directly)
-    train_ds, val_ds = sklearn.model_selection.train_test_split(train_dataset, test_size=0.20)
+
+    sampler = Weight_based_sampler(train_ds, inverse_relative_class_frequencies)
     
-    train_data = transform_data(train_ds)
+    #train_data = transform_data(train_ds, custom_sampler=sampler)
+    train_data = transform_data(train_ds, shuffle=True, class_distribution=train_data_class_distribution)
     dev_data = transform_data(val_ds, shuffle = False)
     test_data = transform_data(test_dataset, shuffle = False)
 
@@ -454,12 +521,14 @@ def finetune_paraphrase_detection(args):
     print(f"The accuracy of the model is: {accuracy:.3f}")
     print(f"Matthews Correlation Coefficient of the model is: {matthews_corr:.3f}")
 
-    #test_ids = test_dataset["id"]
-    #test_results = test_model(model, test_data, test_ids, device)
-    #test_results.to_csv("predictions/bart/etpc-paraphrase-detection-test-output.csv", index=False)
+    test_ids = test_dataset["id"]
+    test_results = test_model(model, test_data, test_ids, device)
+    test_results.to_csv("predictions/bart/etpc-paraphrase-detection-test-output.csv", index=False)
 
 
 if __name__ == "__main__":
     args = get_args()
+    #for x in (1, 2, 3, 4, 5):
+    #    print("START RUN ", x)
     seed_everything(args.seed)
-    finetune_paraphrase_detection(args)
+    finetune_paraphrase_detection(args, 1)
