@@ -10,7 +10,9 @@ While accuracy and the Matthews Correlation Coefficient assess different aspects
 To implement the metrics, we calculated the TP, FP, TN, and FN values for all samples and then used the respective formulas.
 
 **Results:** <br>
-The high Precision (0.806) shows that the majority of the positively predicted examples are correct; however, the low Recall (0.575) suggests that the model fails to detect many samples as positive. The manual inspection of the results and the plotting of the class distribution revealed a likely hypothesis for why this is. The results showed that only a few classes were predicted (almost) all the time. The class distribution showed that these were the classes with the most frequent occurrence in the dataset. The dataset in general was very unevenly distributed between the labels — half a dozen had less than 100 samples, the smallest label only having four occurrences, while others had 2,705 occurrences (in a dataset of 2,730 samples). This poses a large problem at both ends of the spectrum: for the very small classes, there is not enough information for the model to get a good feel for "what they are," and for the large classes, there are not enough negative samples. 
+The high Precision (0.806) shows that the majority of the positively predicted examples are correct; however, the low Recall (0.575) suggests that the model fails to detect many samples as positive. The manual inspection of the results and the plotting of the class distribution revealed a likely hypothesis for why this is. The results showed that only a few classes were predicted (almost) all the time. The class distribution showed that these were the classes with the most frequent occurrence in the dataset. The dataset in general was very unevenly distributed between the labels, half a dozen had less than 100 samples, the smallest label only having four occurrences, while others had 2,705 occurrences (in a dataset of 2,730 samples). This poses a problem at both ends of the spectrum: for the very small classes, there is not enough information for the model to get a good feel for "what they are," and for the large classes, there are not enough negative samples. 
+
+![alt text](imgs/fig_1.png)
 </details>
 
 <h3> 2. Establishing a Reasonable Baseline for Improvement</h3>
@@ -29,10 +31,10 @@ The parameters remained similar to the ones we used for the previous stage (lr: 
 <h3> 3. Is the model not complex enough to solve the problem?</h3>
 <details> 
 **Explanation:** <br>
-The model from the first stage had a single linear layer. First, we wanted to check if additional linear layers might increase performance. The idea was that the model might only classify examples along the "most valuable" boundaries since it only has the ability to use a linear boundary, and thus a model that can differentiate along more complex boundaries might perform better.
+The model from the first stage had a single linear layer. First, we wanted to check if additional linear layers might increase performance. The idea was that the model might only classify examples along the "most valuable" boundaries since it only had the ability to use a linear boundary, and thus a model that can differentiate along more complex boundaries might perform better.
 
 **Implementation:** <br>
-In the implementation, we replaced the single layer with 2 (768 -> 64 -> 26) or 3 (768 -> 128 -> 64 -> 26) layers respectively. Between the layers, ReLU and Dropout (0.2) were used except in the last layer where the sigmoid function remained as before. We expected minimal results at best.
+In the implementation, we replaced the single layer with 2 (768 -> 64 -> 26) or 3 (768 -> 128 -> 64 -> 26) layers respectively. Between the layers, ReLU and Dropout (0.2) were used except in the last layer where the sigmoid function remained as before. We expected minimal increase in the results at best.
 
 **Results:** <br>
 The results were much worse than the baseline, with the three-layer version (0.022) being better than the two-layer one (0.009). Interestingly, the 2-layer version showed a higher precision and lower recall than the baseline and the 3-layer model. This indicates that the model probably instantly overfits if you add additional linear layers or potentially is already overfitting. 
@@ -40,13 +42,16 @@ The results were much worse than the baseline, with the three-layer version (0.0
 
 <h3> 4. Do the ideas behind Focal Loss help increase the performance in this task?</h3>
 <details> 
+
 **Explanation:** <br>
-To try to address the shortcomings of the dataset, we used an idea from computer vision called Focal Loss. It is a loss function which uses two separate ideas to address class imbalance in dense object detection tasks. The alpha parameter tries to mitigate the class imbalance by weighting the loss in favor of rarely occurring classes. The strength of this weighting is determined by the alpha parameter(s). The gamma parameter tries to focus on "hard" samples instead of being sidetracked by the easy ones. Both should work in our favour — we identified the class imbalance as the major problem in this task, so if the weighting works well, it might improve the performance significantly. The gamma parameter is more of a wildcard, but the large labels are predicted with high confidence, so averting the loss away from those would also be good. To test which of these ideas works, we tested them individually.
+To try to address the shortcomings of the current model, we used an idea from computer vision called Focal Loss. It is a loss function which uses two separate ideas to address class imbalance in dense object detection tasks. The alpha parameter tries to mitigate the class imbalance by weighting the loss in favor of rarely occurring classes. The strength of this weighting is determined by the alpha parameter(s). The gamma parameter tries to focus on "hard" samples instead of being sidetracked by the easy ones. Both should work in our favour, we identified the class imbalance as the major problem in this task, so if the weighting works well, it might improve the performance significantly. The gamma parameter is more of a wildcard, but the large labels are predicted with high confidence, so averting the loss away from those would also be good. To test which of these ideas works, we tested them individually. For the alpha values we tested $\frac{1}{x}$, $\frac{1}{\sqrt(x)}$, $\frac{1}{^3\sqrt(x)}$, $\frac{1}{^4\sqrt(x)}$, $\frac{1}{^5\sqrt(x)}$ and for gamma values we tested 1, 2 and 3.
 
 **Implementation:** <br>
-We implemented the Focal Loss as a PyTorch loss (nn.Module), which just implements its mathematical formulation.
+We implemented a Focal_Loss class as a PyTorch loss (nn.Module), which just implements the mathematical formulation of the [Focal Loss](https://arxiv.org/pdf/1708.02002).
 
 **Results:** <br>
+
+The idea behind the gamma parameter does not seem to be applicable to this problem at all, all results were significantly below the baseline, with the best being 0.011. Furthermore all MCC, F1, Precision and Recall values were super close together indicating that it is not a parameter problem, but a problem in the approach.
 </details>
 
 <h3> 5. Does oversampling help mitigate the effects of class imbalance?</h3>
@@ -83,9 +88,16 @@ We implemented this by writing the class Weight_based_sampler, which inherits fr
 |2|baseline|0.806|0.575|0.671|0.117|
 |3|2_layers|0.963|0.307|0.466|0.009|
 |3|3_layers|0.869|0.409|0.627|0.022|
+
+|4|alpha_1|0.726|0.397|0.514|-0.002|
+|4|alpha_2|0.790|0.576|0.666|0.034|
+
+|4|gamma_1|0.788|0.563|0.656|0.0|
+|4|gamma_2|0.790|0.562|0.657|0.011|
+|4|gamma_3|0.790|0.556|0.656|0.011|
+
 |5|1/x|0.835|0.530|0.649|0.095|
 
-A review of methods for imbalanced multilabel classification: (Tarekegn 2021)
 
 
 7. Test over/undersampling 
