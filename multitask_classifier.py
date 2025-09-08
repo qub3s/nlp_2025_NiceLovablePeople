@@ -141,7 +141,7 @@ class MultitaskBERT(nn.Module):
 
         
         # QQP
-        if config.task == "qqp":
+        if args.task == "qqp":
             self.paraphrase_classifier = nn.Sequential(
                 nn.Linear(BERT_HIDDEN_SIZE, 768),
                 nn.GELU(),
@@ -1282,8 +1282,6 @@ def get_args():
     return args
 
 def main():
-    args = get_args()
-    
     seed_everything(args.seed)
     
     # Run training and get the final correlation for STS task
@@ -1331,4 +1329,5 @@ def main():
         test_model(args)
 
 if __name__ == "__main__":
+    args = get_args()
     main()
