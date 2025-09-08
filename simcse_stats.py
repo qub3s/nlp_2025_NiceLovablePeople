@@ -111,11 +111,11 @@ def create_batch_visualizations(results_df, output_dir="batch_analysis_plots"):
 
     plt.xlabel('Number of Batches', fontsize=12)
     plt.ylabel('Pearson Correlation', fontsize=12)
-    plt.title('Effect of Batch Size on SimCSE Performance', fontsize=14, fontweight='bold')
+    plt.title('Effect of N° of Batches on Batches on SimCSE Performance', fontsize=14, fontweight='bold')
     plt.tight_layout()
     plt.xlim(batch_stats.index.min() - 0.5, batch_stats.index.max() + 10)
     plt.legend(loc='best', fontsize=10)
-    plt.savefig(f'{output_dir}/simcs_batch_vs_correlation_ci.png', 
+    plt.savefig(f'{output_dir}/simcs_batch_vs_correlation_ci.pdf', 
                 dpi=300, bbox_inches='tight', pad_inches=0.1)
     plt.close()
     

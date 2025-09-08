@@ -19,7 +19,7 @@ def extract_results_from_filenames(file_pattern="*.txt"):
         try:
             filename = os.path.basename(file_path)
             print(f"Processing: {filename}")
-            pattern = r"sbert_seed_(\d+)_alpha_0\.5_batch_([\d.]+)_corr_([\d.]+)\.txt"
+            pattern = r"simcse_sbert_seed_(\d+)_alpha_0\.975_batch_([\d.]+)_corr_([\d.]+)\.txt"
             match = re.search(pattern, filename)
             
             if match:
@@ -76,11 +76,14 @@ def create_batch_visualizations(results_df, output_dir="batch_analysis_plots"):
     plt.style.use('default')
     plt.rcParams['font.family'] = 'serif'
     plt.rcParams['font.size'] = 12
-    
+
+    # Batch size
     batch_stats = results_df.groupby('batch')['correlation'].agg(['mean', 'std', 'count'])
     batch_stats['ci'] = 1.96 * batch_stats['std'] / np.sqrt(batch_stats['count'])
-    batches = sorted(results_df['batch'].unique())
 
+    batches = sorted(results_df['batch'].unique())
+    
+    # Confidence intervals
     means = []
     ci_lower = []
     ci_upper = []
@@ -92,29 +95,27 @@ def create_batch_visualizations(results_df, output_dir="batch_analysis_plots"):
         ci_lower.append(lower)
         ci_upper.append(upper)
 
-    # Plot Batch vs Scores with logarithmic x-axis
-    plt.figure(figsize=(8, 4))
+    # Plot Batch vs Scores
+    plt.figure(figsize=(6, 3))
 
     plt.fill_between(batch_stats.index, 
                     batch_stats['mean'] - batch_stats['ci'], 
                     batch_stats['mean'] + batch_stats['ci'], 
-                    alpha=0.3, color='red', label='95% CI')
+                    alpha=0.3, color='black', label='95% CI')
 
     plt.plot(batch_stats.index, batch_stats['mean'], 
-            'o-', color='red', linewidth=2, markersize=6, 
+            'o-', color= 'black', linewidth=2, markersize=6, 
             label='Mean Correlation')
-
+    
     plt.xscale('log')
 
     plt.xlabel('Number of Batches', fontsize=12)
     plt.ylabel('Pearson Correlation', fontsize=12)
-    plt.title('Effect of N° of Batches on SBert Performance', fontsize=14, fontweight='bold')
+    plt.title('Effect of Batch Size on SimCSE + SBert Performance', fontsize=14, fontweight='bold')
     plt.tight_layout()
-
-    # Adjust x-limits for better appearance on log scale
-    plt.xlim(batch_stats.index.min() * 0.8, batch_stats.index.max() + 10)
+    plt.xlim(batch_stats.index.min() - 0.5, batch_stats.index.max() + 10)
     plt.legend(loc='best', fontsize=10)
-    plt.savefig(f'{output_dir}/batch_vs_correlation_ci_log.pdf', 
+    plt.savefig(f'{output_dir}/simcs_sbert_batch_vs_correlation_ci.pdf', 
                 dpi=300, bbox_inches='tight', pad_inches=0.1)
     plt.close()
     
@@ -128,7 +129,7 @@ def create_batch_visualizations(results_df, output_dir="batch_analysis_plots"):
     
     plt.errorbar(range(len(batches)), means, yerr=[np.array(means)-np.array(ci_lower), 
                                                   np.array(ci_upper)-np.array(means)], 
-                 fmt='o-', color='red', capsize=5, capthick=2, markersize=8, linewidth=2,
+                 fmt='o-', color='black', capsize=5, capthick=2, markersize=8, linewidth=2,
                  label='Mean with 95% CI')
     
     plt.xlabel('Number of Batches', fontsize=14)
@@ -136,13 +137,13 @@ def create_batch_visualizations(results_df, output_dir="batch_analysis_plots"):
     plt.title('Individual Scores with Mean and Confidence Intervals (Batch Size)', fontsize=16)
     plt.xticks(range(len(batches)), [int(b) if b.is_integer() else b for b in batches])
     plt.legend()
-    plt.savefig(f'{output_dir}/batch_individual_points_ci.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'{output_dir}/simcse_sbert_batch_individual_points_ci.png', dpi=300, bbox_inches='tight')
     plt.close()
-    
+   
 
 if __name__ == "__main__":
     """Main analysis function"""
-    folder_path = "sbert_data"
-    file_pattern = os.path.join(folder_path, "*.txt")
+    folder_path = "simcse_sbert_batch_data"
+    file_pattern = os.path.join(folder_path, "*.txt") 
     results_df = extract_results_from_filenames(file_pattern)
     create_batch_visualizations(results_df)

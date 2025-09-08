@@ -144,14 +144,14 @@ def create_alpha_visualizations(results_df, output_dir="alpha_analysis_plots"):
     ]
     plt.legend(handles=legend_elements, loc='best', fontsize=10)
 
-    plt.savefig(f'{output_dir}/alpha_vs_correlation_ci.png', 
+    plt.savefig(f'{output_dir}/alpha_vs_correlation_ci.pdf', 
             dpi=300, bbox_inches='tight', pad_inches=0.1)
     plt.close()
 
 
 
     # Window
-    plt.figure(figsize=(3, 4))
+    plt.figure(figsize=(4, 3))
 
     colors = ['red', 'purple', 'blue']
     cmap = LinearSegmentedColormap.from_list('red_blue', colors, N=100)
@@ -192,11 +192,12 @@ def create_alpha_visualizations(results_df, output_dir="alpha_analysis_plots"):
     plt.tight_layout()
 
     plt.xlim(0.9 - 0.01, alpha_stats.index.max() + 0.01)
+    plt.ylim(0.8225, 0.827)
 
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(0, 1))
     sm.set_array([])
 
-    plt.savefig(f'{output_dir}/alpha_vs_correlation_ci_window.png', 
+    plt.savefig(f'{output_dir}/alpha_vs_correlation_ci_window.pdf', 
             dpi=300, bbox_inches='tight', pad_inches=0.1)
     plt.close()
 
