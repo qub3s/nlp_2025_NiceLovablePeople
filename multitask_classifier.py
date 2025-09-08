@@ -552,19 +552,13 @@ def train_multitask(args):
         lr = args.lr
         optimizer = AdamW(model.parameters(), lr=lr)
     
-    # Learning rate scheduler
-    # if args.task == "sts" or args.task == "etpc":
-    #     scheduler = get_linear_schedule_with_warmup(
-    #     optimizer,
-    #     num_warmup_steps=num_warmup_steps,
-    #     num_training_steps=total_steps
-    # )
-
-    scheduler = get_linear_schedule_with_warmup(
+    #Learning rate scheduler
+    if args.task == "sts" or args.task == "etpc":
+        scheduler = get_linear_schedule_with_warmup(
         optimizer,
         num_warmup_steps=num_warmup_steps,
-        num_training_steps=total_steps)
-
+        num_training_steps=total_steps
+    )
 
     best_dev_acc = float("-inf")
 
