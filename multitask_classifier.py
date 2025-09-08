@@ -923,7 +923,7 @@ def get_args():
         type=str,
         help="Type of STS training",
         choices=("standard", "sbert", "simcse", "simcse_sbert"),
-        default="standard",
+        default="pooler",
     )
     # NEW: Save only correlation values
     parser.add_argument("--save_results_only", action="store_true",
