@@ -135,28 +135,21 @@ def transform_data(dataset, max_length=512, shuffle=True, custom_sampler=None, c
             oh = torch.any(oh, dim=0)
             one_hot.append(oh)
 
-        print("len: ", len(one_hot))
-        
         length_one_hot = len(one_hot)
         replication = [0] * 26
 
-        for x in one_hot:
-            if x[8] != 0:
-                print("Exists: ",x)
-        
         if class_distribution is not None:
             start_frequencies = class_distribution.copy()
             m = max(class_distribution)
             max_i = class_distribution.index(m)
 
-            while min(class_distribution) <= 0.3 * m:
+            value = 0.1
+            print("Min Value: ", value)
+            while min(class_distribution) <= value * m:
                 min_i = class_distribution.index(min(class_distribution))
                 idx = random.randint(0, len(class_distribution)-1)
 
-                
-                print(replication[min_i]/start_frequencies[min_i])
                 if replication[min_i]/start_frequencies[min_i] > 40:
-                    print("blocked")
                     class_distribution[min_i] += 1
                 else:
                     old_idx = idx
@@ -167,9 +160,7 @@ def transform_data(dataset, max_length=512, shuffle=True, custom_sampler=None, c
                         if idx == -1:
                             idx += length_one_hot
 
-                    
                     replication[min_i] += 1
-                    print(replication)
                     one_hot.append(one_hot[idx])
                     inp_ids.append(inp_ids[idx])
                     att_mask.append(att_mask[idx])
@@ -218,7 +209,7 @@ def train_model(model, train_data, dev_data, device, epochs=5, lr=lr, class_freq
     optimizer = AdamW(model.parameters(), lr=lr)
     loss_fn = nn.BCELoss()
     #loss_fn = Focal_Loss(class_frequencies, 2)
-    early_stopping = EarlyStopping("models/pd_model.pth", patience=5, verbose=False, delta=0)
+    early_stopping = EarlyStopping("models/pd_model.pth", patience=5)
     model = model.to(device)
 
     for epoch in range(epochs):
@@ -414,14 +405,12 @@ def evaluate_model(model, test_data, device):
     return precision, recall, f1, accuracy, matthews_coefficient
 
 class EarlyStopping:
-    def __init__(self, checkpoint_path, patience=10, verbose=False, delta=0):
+    def __init__(self, checkpoint_path, patience=10):
         self.patience = patience
-        self.verbose = verbose
         self.counter = 0
         self.best_score = None
         self.early_stop = False
         self.val_loss_min = np.inf
-        self.delta = delta
         self.model_checkpoint_path = checkpoint_path
 
     def __call__(self, val_loss, model):
@@ -430,7 +419,7 @@ class EarlyStopping:
         if self.best_score is None:
             self.best_score = score
             self.save_checkpoint(val_loss, model)
-        elif score <= self.best_score + self.delta:
+        elif score <= self.best_score:
             self.counter += 1
             if self.counter >= self.patience:
                 self.early_stop = True
@@ -440,8 +429,6 @@ class EarlyStopping:
             self.counter = 0
     
     def save_checkpoint(self, val_loss, model):
-        if self.verbose:
-            print(f'Validation Loss Decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
         torch.save(model.state_dict(), self.model_checkpoint_path)
         self.val_loss_min = val_loss
 
@@ -478,7 +465,7 @@ def finetune_paraphrase_detection(args, iter_x):
 
     train_ds, val_ds = sklearn.model_selection.train_test_split(train_dataset, test_size=0.25)
 
-    for x in list(train_ds["paraphrase_type_ids"].apply(eval)):
+    for x in list(train_dataset["paraphrase_type_ids"].apply(eval)):
         train_dataset_label.append(set(x))
 
     for td in train_dataset_label:
@@ -487,6 +474,7 @@ def finetune_paraphrase_detection(args, iter_x):
                 train_data_class_distribution[x] += 1
 
     train_data_class_distribution = [ train_data_class_distribution[x] for x in range(len(train_data_class_distribution)) if x not in [0, 12, 19, 20, 23, 27]]
+    print(train_data_class_distribution)
 
     inverse_relative_class_frequencies = [ 1 / (x + 1e-8)**(1/iter_x) for x in train_data_class_distribution]
 
@@ -498,7 +486,9 @@ def finetune_paraphrase_detection(args, iter_x):
     sampler = Weight_based_sampler(train_ds, inverse_relative_class_frequencies)
     
     #train_data = transform_data(train_ds, custom_sampler=sampler)
-    train_data = transform_data(train_ds, shuffle=True, class_distribution=train_data_class_distribution)
+    #train_data = transform_data(train_ds, shuffle=True, class_distribution=train_data_class_distribution)
+
+    train_data = transform_data(train_ds, shuffle=True)
     dev_data = transform_data(val_ds, shuffle = False)
     test_data = transform_data(test_dataset, shuffle = False)
 
@@ -508,7 +498,10 @@ def finetune_paraphrase_detection(args, iter_x):
     print(batch_size)
     print(epochs)
 
-    model = train_model(model, train_data, dev_data, device, epochs=epochs, class_frequencies=inverse_relative_class_frequencies)
+    train_model(model, train_data, dev_data, device, epochs=epochs, class_frequencies=inverse_relative_class_frequencies)
+    model = model.to(torch.device("cpu"))
+    model.load_state_dict(torch.load("models/pd_model.pth", map_location=torch.device("cpu")))
+    model = model.to(device)
 
     print("Training finished.")
 
