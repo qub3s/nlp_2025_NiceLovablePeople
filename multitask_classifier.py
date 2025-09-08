@@ -141,8 +141,19 @@ class MultitaskBERT(nn.Module):
 
         
         # QQP
-        self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
+        if config.task == "qqp":
+            self.paraphrase_classifier = nn.Sequential(
+                nn.Linear(BERT_HIDDEN_SIZE, 768),
+                nn.GELU(),
+                nn.Dropout(config.hidden_dropout_prob),
+                nn.Linear(768, 1)
+            )
+            self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
+            # Initialisierung
+            nn.init.xavier_uniform_(self.paraphrase_classifier[0].weight)
+            nn.init.constant_(self.paraphrase_classifier[0].bias, 0.0)
+            nn.init.xavier_uniform_(self.paraphrase_classifier[3].weight)
+            nn.init.constant_(self.paraphrase_classifier[3].bias, 0.0)
         
 
         # Paraphrase type detection
@@ -155,12 +166,121 @@ class MultitaskBERT(nn.Module):
         last_hidden_state = outputs["last_hidden_state"]
         cls_embedding = last_hidden_state[:, 0]
         return cls_embedding
+    
+    # ========== POOLING FUNCTIONS ============       
+  
+    def hierarchical_pooling(self, model_output, attention_mask):
+        """
+        Combines CLS token representation with mean pooling for richer representation.
+        model_output: last_hidden_state from BERT
+        attention_mask: attention mask for the input
+        Returns: pooled sentence embedding of size [batch_size, hidden_size * 2]
+        """
+        token_embeddings = model_output["last_hidden_state"]
+        
+        # CLS token representation
+        cls_embedding = token_embeddings[:, 0, :]
+        
+        # Mean pooling of all tokens
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        mean_embedding = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        
+        # Concatenate both representations
+        combined_embedding = torch.cat([cls_embedding, mean_embedding], dim=1)
+        
+        # Optional: add a projection layer if dimensionality is too high
+        if hasattr(self, 'projection'):
+            combined_embedding = self.projection(combined_embedding)
+        
+        return combined_embedding        
+            
+    def weighted_mean_pooling(self, model_output, attention_mask):
+        """
+        Performs weighted mean pooling using self-attention weights.
+        Gives more importance to semantically richer tokens.
+        model_output: contains last_hidden_state and attention weights
+        attention_mask: attention mask for the input
+        Returns: pooled sentence embedding of size [batch_size, hidden_size]
+        """
+        token_embeddings = model_output["last_hidden_state"]
+        
+        # Dynamically create attention weights if they don't exist
+        if not hasattr(self, 'attention_weights'):
+            hidden_size = token_embeddings.size(-1)
+            # Register as buffer so it gets moved to the correct device
+            self.register_parameter(
+                'attention_weights', 
+                nn.Parameter(torch.randn(hidden_size, 1).to(token_embeddings.device))
+            )
+            nn.init.xavier_uniform_(self.attention_weights)
+        
+        # Calculate attention scores
+        weights = torch.matmul(token_embeddings, self.attention_weights)  # [batch, seq, 1]
+        weights = weights.squeeze(-1)  # [batch, seq]
+        
+        # Apply mask and softmax
+        weights = weights.masked_fill(attention_mask == 0, -1e9)
+        attention_weights = torch.softmax(weights, dim=-1)  # [batch, seq]
+        
+        # Weighted sum
+        weighted_emb = torch.sum(token_embeddings * attention_weights.unsqueeze(-1), dim=1)
+        return weighted_emb  
+                
+    def max_pooling(self, model_output, attention_mask):
+        """
+        Performs max pooling on the token embeddings, taking into account the attention mask.
+        Captures the most salient features from each dimension.
+        model_output: last_hidden_state from BERT
+        attention_mask: attention mask for the input
+        Returns: pooled sentence embedding of size [batch_size, hidden_size]
+        """
+        token_embeddings = model_output["last_hidden_state"]
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).bool()
+        
+        # Set padding tokens to a very small value so they don't affect max
+        masked_embeddings = token_embeddings.clone()
+        masked_embeddings[~input_mask_expanded] = -float('inf')
+        
+        max_embeddings, _ = torch.max(masked_embeddings, dim=1)
+        return max_embeddings            
+            
+    def mean_pooling(self, model_output, attention_mask):
+        """
+        Performs mean pooling on the token embeddings, taking into account the attention mask.
+        model_output: last_hidden_state from BERT
+        attention_mask: attention mask for the input
+        Returns: pooled sentence embedding of size [batch_size, hidden_size]
+        """
+        token_embeddings = model_output["last_hidden_state"]
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        return sum_embeddings / sum_mask
+
+
+
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
 
         if self.config.forward_type == "pooler":
+            
+            if self.config.task == "qqp":
+                pooling  = "mean" # works best for QQP
+                if pooling == "max":
+                    embeddings = self.max_pooling(outputs, attention_mask)
+                elif pooling == "mean":
+                    embeddings = self.mean_pooling(outputs, attention_mask)
+                elif pooling == "weighted":
+                    embeddings = self.weighted_mean_pooling(outputs, attention_mask)
+                elif pooling == "hierarchical":
+                    embeddings = self.hierarchical_pooling(outputs, attention_mask) 
+                    # change forward function -> self.paraphrase_classifier = nn.Linear(config.hidden_size * 2, 1)
+                    # layer size has to be changed
+                embeddings = nn.functional.layer_norm(embeddings, normalized_shape=embeddings.size()[1:])
+                return embeddings            
+            
             return outputs["pooler_output"] 
         
         elif self.config.forward_type == "raw_cls":
