@@ -55,47 +55,10 @@ class MultitaskBERT(nn.Module):
 
     def __init__(self, config):
         super(MultitaskBERT, self).__init__()
+        self.bert = BertModel.from_pretrained(
+            "bert-base-uncased", local_files_only=config.local_files_only
+        )
 
-        # Load pre-tuned SimCSE model or base BERT
-        self.config = config
-        if config.use_pretrained_simcse:
-            print(f"Loading pretrained SimCSE model from: {config.simcse_model_path}")
-            
-            state_dict = torch.load(config.simcse_model_path, map_location='cpu')
-            
-            # Show model structure
-            print(f"Model contains {len(state_dict)} parameters")
-            bert_keys = [k for k in state_dict.keys() if k.startswith('bert.')]
-            print(f"Found {len(bert_keys)} BERT parameters")
-            
-            # Initialize with base BERT
-            self.bert = BertModel.from_pretrained(
-                "bert-base-uncased",
-                local_files_only=config.local_files_only
-            )
-            
-            # Extract BERT weights
-            bert_state_dict = {}
-            for key, value in state_dict.items():
-                if key.startswith('bert.'):
-                    new_key = key[5:]  # Remove 'bert.' prefix
-                    bert_state_dict[new_key] = value
-            
-            # Load the BERT weights
-            if bert_state_dict:
-                missing_keys, unexpected_keys = self.bert.load_state_dict(bert_state_dict, strict=False)
-                print(f"Successfully loaded BERT weights")
-                print(f"Missing keys: {len(missing_keys)}")
-                print(f"Unexpected keys: {len(unexpected_keys)}")
-            else:
-                print("Warning: No BERT weights found in SimCSE model.")
-                
-        else:
-            self.bert = BertModel.from_pretrained(
-                "bert-base-uncased",
-                local_files_only=config.local_files_only
-            )
-        
         # Freeze BERT parameters in pretrain mode
         for param in self.bert.parameters():
             if config.option == "pretrain":
@@ -108,46 +71,106 @@ class MultitaskBERT(nn.Module):
         # HS: Adding a linear layer for sentiment prediction. Will put this at end of last BERT block.
         # The final BERT embedding is the hidden state of [CLS] token which I will get 
         # as dict['pooler_output'] from output of BertModel.forward().
-        # STS Regression Head
-        if config.regressor_type == "simple":
-            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
-            self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
-
-        elif config.regressor_type == "complex":
-            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
-            self.sts_regressor = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE * 3, 512), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob), nn.Linear(512, 256), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob),nn.Linear(256, 1))
-
-        elif config.regressor_type == "sbert":
-            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
-
-        # SST
         self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        # STS Regression Head
+        self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
+
         # QQP
-        self.paraphrase_classifier = nn.Sequential(
-            nn.Linear(BERT_HIDDEN_SIZE, 768),
-            nn.GELU(),
-            nn.Dropout(config.hidden_dropout_prob),
-            nn.Linear(768, 1)
-        )
         self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
-        # Initialisierung
-        nn.init.xavier_uniform_(self.paraphrase_classifier[0].weight)
-        nn.init.constant_(self.paraphrase_classifier[0].bias, 0.0)
-        nn.init.xavier_uniform_(self.paraphrase_classifier[3].weight)
-        nn.init.constant_(self.paraphrase_classifier[3].bias, 0.0)
+        self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
         
+    def hierarchical_pooling(self, model_output, attention_mask):
+        """
+        Combines CLS token representation with mean pooling for richer representation.
+        model_output: last_hidden_state from BERT
+        attention_mask: attention mask for the input
+        Returns: pooled sentence embedding of size [batch_size, hidden_size * 2]
+        """
+        token_embeddings = model_output["last_hidden_state"]
         
+        # CLS token representation
+        cls_embedding = token_embeddings[:, 0, :]
+        
+        # Mean pooling of all tokens
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+        mean_embedding = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        
+        # Concatenate both representations
+        combined_embedding = torch.cat([cls_embedding, mean_embedding], dim=1)
+        
+        # Optional: add a projection layer if dimensionality is too high
+        if hasattr(self, 'projection'):
+            combined_embedding = self.projection(combined_embedding)
+        
+        return combined_embedding        
+            
+    def weighted_mean_pooling(self, model_output, attention_mask):
+        """
+        Performs weighted mean pooling using self-attention weights.
+        Gives more importance to semantically richer tokens.
+        model_output: contains last_hidden_state and attention weights
+        attention_mask: attention mask for the input
+        Returns: pooled sentence embedding of size [batch_size, hidden_size]
+        """
+        token_embeddings = model_output["last_hidden_state"]
+        
+        # Use attention weights from the last layer (or average across layers)
+        if hasattr(self.bert.config, 'output_attentions') and self.bert.config.output_attentions:
+            # Average attention weights across all layers and heads
+            attentions = torch.stack(model_output.attentions, dim=0)  # [layers, batch, heads, seq, seq]
+            avg_attention = torch.mean(attentions[:, :, :, 0, :], dim=(0, 2))  # [batch, seq]
+        else:
+            # Fallback: use simple attention based on token embeddings
+            weights = torch.matmul(token_embeddings, self.attention_weights)
+            weights = weights.squeeze(-1)
+            avg_attention = torch.softmax(weights, dim=-1)
+        
+        # Apply attention mask
+        avg_attention = avg_attention * attention_mask.float()
+        avg_attention = avg_attention / torch.sum(avg_attention, dim=1, keepdim=True)
+        
+        # Weighted sum
+        weighted_emb = torch.sum(token_embeddings * avg_attention.unsqueeze(-1), dim=1)
+        return weighted_emb      
+                
+    def max_pooling(self, model_output, attention_mask):
+        """
+        Performs max pooling on the token embeddings, taking into account the attention mask.
+        Captures the most salient features from each dimension.
+        model_output: last_hidden_state from BERT
+        attention_mask: attention mask for the input
+        Returns: pooled sentence embedding of size [batch_size, hidden_size]
+        """
+        token_embeddings = model_output["last_hidden_state"]
+        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).bool()
+        
+        # Set padding tokens to a very small value so they don't affect max
+        masked_embeddings = token_embeddings.clone()
+        masked_embeddings[~input_mask_expanded] = -float('inf')
+        
+        max_embeddings, _ = torch.max(masked_embeddings, dim=1)
+        return max_embeddings            
+            
     def mean_pooling(self, model_output, attention_mask):
+        """
+        Performs mean pooling on the token embeddings, taking into account the attention mask.
+        model_output: last_hidden_state from BERT
+        attention_mask: attention mask for the input
+        Returns: pooled sentence embedding of size [batch_size, hidden_size]
+        """
         token_embeddings = model_output["last_hidden_state"]
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
         sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
         sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-        return sum_embeddings / sum_mask       
+        return sum_embeddings / sum_mask
+
 
     def forward(self, input_ids, attention_mask):
         """Takes a batch of sentences and produces embeddings for them."""
@@ -157,17 +180,28 @@ class MultitaskBERT(nn.Module):
         # Here, you can start by just returning the embeddings straight from BERT.
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
+        pooling = "max"
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        if args.task == "qqp":
+            if pooling == "max":
+                embeddings = self.max_pooling(outputs, attention_mask)
+            elif pooling == "mean":
+                embeddings = self.mean_pooling(outputs, attention_mask)
+            elif pooling == "weighted":
+                embeddings = self.weighted_mean_pooling(outputs, attention_mask)
+            elif pooling == "hierarchical":
+                embeddings = self.hierarchical_pooling(outputs, attention_mask) 
+                
+            embeddings = nn.functional.layer_norm(embeddings, normalized_shape=embeddings.size()[1:])
+            return embeddings
         return outputs["pooler_output"] 
     
     def forward_etpc(self, input_ids, attention_mask):
         """Use last hidden state for the etpc datase."""
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        if args.task == "qqp":
-            embeddings = self.mean_pooling(outputs, attention_mask)
-            embeddings = nn.functional.layer_norm(embeddings, normalized_shape=embeddings.size()[1:])
-            return embeddings
-        return outputs["pooler_output"] 
+        last_hidden_state = outputs["last_hidden_state"]
+        cls_embedding = last_hidden_state[:, 0]
+        return cls_embedding
     
     def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
@@ -406,10 +440,6 @@ def train_multitask(args):
         "data_dir": ".",
         "option": args.option,
         "local_files_only": args.local_files_only,
-        "simcse_model_path": args.simcse_model_path,
-        "use_pretrained_simcse": args.use_pretrained_simcse,
-        "regressor_type": args.regressor_type,
-        "max_batches": args.max_batches,
     }
     config = SimpleNamespace(**config)
 
@@ -620,13 +650,6 @@ def test_model(args):
 
 def get_args():
     parser = argparse.ArgumentParser()
-
-    # Which model to load
-    parser.add_argument("--use_pretrained_simcse", action="store_true", default = False, 
-                       help="Use pre-trained SimCSE model instead of base BERT")
-    parser.add_argument("--simcse_model_path", type=str, default="models/simcse_supervised/best_model_epoch3_corr0.8216.pt",
-                       help="Path to your pre-trained SimCSE model")
-    
     # Training task
     parser.add_argument(
         "--task",
@@ -648,67 +671,8 @@ def get_args():
     )
     parser.add_argument("--use_gpu", action="store_true")
 
-    # NEW: Regressor type agument
-    parser.add_argument(
-        "--regressor_type",
-        type=str,
-        help="Type of regressor to use: simple or complex",
-        choices=("simple", "complex", "sbert"),
-        default="simple",
-    )
-
-    # NEW: Add forward function type argument
-    parser.add_argument(
-        "--forward_type",
-        type=str,
-        help="Type of forward function: pooler or raw_cls",
-        choices=("pooler", "raw_cls", "sbert_mean", "simcse_sbert"),
-        default="pooler",
-    )
-
-    # NEW: Add STS training type argument
-    parser.add_argument(
-        "--sts_training_type",
-        type=str,
-        help="Type of STS training",
-        choices=("standard", "sbert", "simcse", "simcse_sbert"),
-        default="standard",
-    )
-    # NEW: Save only correlation values
-    parser.add_argument("--save_results_only", action="store_true",
-                       help="Save only results to text file instead of full model")
-
-    # NEW: Add alpha value
-    parser.add_argument("--alpha", type=float, default=0.5, help="Weight for SimCSE loss in combined training")
-
-    # NEW: Max Batches
-    parser.add_argument("--max_batches", type=float, default=0, help="Number of batches tro train on (for STS task only)")
-
-    # NEW: Add warmup ratio argument
-    parser.add_argument("--warmup_ratio", type=float, default=0.1, help="Percentage of total steps for warmup (0.1 = 10%)")
-
-    # Hyperparameters - MOVE THESE UP before the parse_known_args() call
-    parser.add_argument(
-        "--batch_size", help="sst: 64 can fit a 12GB GPU", type=int, default=64
-    )
-    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
-    parser.add_argument(
-        "--lr",
-        type=float,
-        help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
-        default=1e-5,  # Set a default, we'll update it later
-    )
-    parser.add_argument("--local_files_only", action="store_true")
-
-    # Parse known args to get the option for conditional defaults
     args, _ = parser.parse_known_args()
-    
-    # Update lr default based on option
-    if args.option == "pretrain":
-        parser.set_defaults(lr=1e-3)
-    else:
-        parser.set_defaults(lr=1e-5)
-
+    print(f"args: {args}")
     # Dataset paths
     parser.add_argument("--sst_train", type=str, default="data/sst-sentiment-train.csv")
     parser.add_argument("--sst_dev", type=str, default="data/sst-sentiment-dev.csv")
@@ -824,22 +788,20 @@ def get_args():
         ),
     )
 
-    # Filepath argument - add this at the end
+    # Hyperparameters
     parser.add_argument(
-        "--filepath", 
-        type=str, 
-        default=None,  # Set to None initially
-        help="Path to save/load the model"
+        "--batch_size", help="sst: 64 can fit a 12GB GPU", type=int, default=64
     )
-    
-    parser.add_argument("--fastEpoch", type=bool, default=False)
-    # Parse all arguments
+    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
+    parser.add_argument(
+        "--lr",
+        type=float,
+        help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
+        default=1e-3 if args.option == "pretrain" else 1e-5,
+    )
+    parser.add_argument("--local_files_only", action="store_true")
+
     args = parser.parse_args()
-    
-    # # Now calculate default_filepath using the parsed values
-    # if args.filepath is None:
-    #     args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
-    
     return args
 
 

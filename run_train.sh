@@ -42,10 +42,7 @@ echo -e "\nStarting STS\n"
 
 # QQP
 echo -e "\nStarting QQP\n"
-# normal model
-#python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=6 
-# new model
-python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=6 --use_pretrained_simcse
+python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=6
 
 # PTD-Bert
 echo -e "\nStarting PTD-Bert\n"
