@@ -80,7 +80,7 @@ class MultitaskBERT(nn.Module):
 
         # QQP
         self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.paraphrase_classifier = nn.Linear(config.hidden_size*3, 1)
+        self.paraphrase_classifier = nn.Linear(config.hidden_size*2, 1)
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -121,24 +121,27 @@ class MultitaskBERT(nn.Module):
         """
         token_embeddings = model_output["last_hidden_state"]
         
-        # Use attention weights from the last layer (or average across layers)
-        if hasattr(self.bert.config, 'output_attentions') and self.bert.config.output_attentions:
-            # Average attention weights across all layers and heads
-            attentions = torch.stack(model_output.attentions, dim=0)  # [layers, batch, heads, seq, seq]
-            avg_attention = torch.mean(attentions[:, :, :, 0, :], dim=(0, 2))  # [batch, seq]
-        else:
-            # Fallback: use simple attention based on token embeddings
-            weights = torch.matmul(token_embeddings, self.attention_weights)
-            weights = weights.squeeze(-1)
-            avg_attention = torch.softmax(weights, dim=-1)
+        # Dynamically create attention weights if they don't exist
+        if not hasattr(self, 'attention_weights'):
+            hidden_size = token_embeddings.size(-1)
+            # Register as buffer so it gets moved to the correct device
+            self.register_parameter(
+                'attention_weights', 
+                nn.Parameter(torch.randn(hidden_size, 1).to(token_embeddings.device))
+            )
+            nn.init.xavier_uniform_(self.attention_weights)
         
-        # Apply attention mask
-        avg_attention = avg_attention * attention_mask.float()
-        avg_attention = avg_attention / torch.sum(avg_attention, dim=1, keepdim=True)
+        # Calculate attention scores
+        weights = torch.matmul(token_embeddings, self.attention_weights)  # [batch, seq, 1]
+        weights = weights.squeeze(-1)  # [batch, seq]
+        
+        # Apply mask and softmax
+        weights = weights.masked_fill(attention_mask == 0, -1e9)
+        attention_weights = torch.softmax(weights, dim=-1)  # [batch, seq]
         
         # Weighted sum
-        weighted_emb = torch.sum(token_embeddings * avg_attention.unsqueeze(-1), dim=1)
-        return weighted_emb      
+        weighted_emb = torch.sum(token_embeddings * attention_weights.unsqueeze(-1), dim=1)
+        return weighted_emb  
                 
     def max_pooling(self, model_output, attention_mask):
         """
@@ -180,7 +183,7 @@ class MultitaskBERT(nn.Module):
         # Here, you can start by just returning the embeddings straight from BERT.
         # When thinking of improvements, you can later try modifying this
         # (e.g., by adding other layers).
-        pooling = "max"
+        pooling = "hierarchical"
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         if args.task == "qqp":
             if pooling == "max":
