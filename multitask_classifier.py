@@ -27,6 +27,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 
 from sentiwordnet_processor import SentiWordNetProcessor, SentiWordNetProcessor_NegHandling, VADERProcessor
+import datetime
+
+from torch.optim.lr_scheduler import LambdaLR
 
 TQDM_DISABLE = False
 
@@ -61,10 +64,48 @@ class MultitaskBERT(nn.Module):
 
     def __init__(self, config):
         super(MultitaskBERT, self).__init__()
-        self.bert = BertModel.from_pretrained(
-            "bert-base-uncased", local_files_only=config.local_files_only
-        )
 
+        self.config = config
+
+        # Load pre-tuned SimCSE model or base BERT
+        if config.use_pretrained_simcse:
+            print(f"Loading pretrained SimCSE model from: {config.simcse_model_path}")
+            
+            state_dict = torch.load(config.simcse_model_path, map_location='cpu')
+            
+            # Show model structure
+            print(f"Model contains {len(state_dict)} parameters")
+            bert_keys = [k for k in state_dict.keys() if k.startswith('bert.')]
+            print(f"Found {len(bert_keys)} BERT parameters")
+            
+            # Initialize with base BERT
+            self.bert = BertModel.from_pretrained(
+                "bert-base-uncased",
+                local_files_only=config.local_files_only
+            )
+            
+            # Extract BERT weights
+            bert_state_dict = {}
+            for key, value in state_dict.items():
+                if key.startswith('bert.'):
+                    new_key = key[5:]  # Remove 'bert.' prefix
+                    bert_state_dict[new_key] = value
+            
+            # Load the BERT weights
+            if bert_state_dict:
+                missing_keys, unexpected_keys = self.bert.load_state_dict(bert_state_dict, strict=False)
+                print(f"Successfully loaded BERT weights")
+                print(f"Missing keys: {len(missing_keys)}")
+                print(f"Unexpected keys: {len(unexpected_keys)}")
+            else:
+                print("Warning")
+                
+        else:
+            self.bert = BertModel.from_pretrained(
+                "bert-base-uncased",
+                local_files_only=config.local_files_only
+            )
+        
         # Freeze BERT parameters in pretrain mode
         for param in self.bert.parameters():
             if config.option == "pretrain":
@@ -77,10 +118,6 @@ class MultitaskBERT(nn.Module):
         # HS: Adding a linear layer for sentiment prediction. Will put this at end of last BERT block.
         # The final BERT embedding is the hidden state of [CLS] token which I will get 
         # as dict['pooler_output'] from output of BertModel.forward().
-        
-        # self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
-        # self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
-        
         self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 5 + 3, N_SENTIMENT_CLASSES) # [768+5+3] -> 5 # HS: 8 extra features from SWN and VADER
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
@@ -91,57 +128,69 @@ class MultitaskBERT(nn.Module):
             nn.Sigmoid())   # BERT_weight and SWN_weight and VADER_weight
 
         # STS Regression Head
-        self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
+        if config.regressor_type == "simple":
+            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
+            self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
 
+        elif config.regressor_type == "complex":
+            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
+            self.sts_regressor = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE * 3, 512), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob), nn.Linear(512, 256), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob),nn.Linear(256, 1))
+
+        elif config.regressor_type == "sbert":
+            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        
         # QQP
+        self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_classifier = nn.Linear(config.hidden_size, 1)
-        self.paraphrase_classifier = nn.Dropout(config.hidden_dropout_prob)
+        
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
         
-           
-
-    def forward(self, input_ids, attention_mask):
-        """Takes a batch of sentences and produces embeddings for them."""
-
-        # The final BERT embedding is the hidden state of [CLS] token (the first token).
-        # See BertModel.forward() for more details.
-        # Here, you can start by just returning the embeddings straight from BERT.
-        # When thinking of improvements, you can later try modifying this
-        # (e.g., by adding other layers).
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        return outputs["pooler_output"] 
-    
     def forward_etpc(self, input_ids, attention_mask):
         """Use last hidden state for the etpc datase."""
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         last_hidden_state = outputs["last_hidden_state"]
         cls_embedding = last_hidden_state[:, 0]
         return cls_embedding
+
+    def forward(self, input_ids, attention_mask):
+        """Takes a batch of sentences and produces embeddings for them."""
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+
+        if self.config.forward_type == "pooler":
+            return outputs["pooler_output"] 
+        
+        elif self.config.forward_type == "raw_cls":
+            if isinstance(outputs, dict):
+                return outputs["last_hidden_state"][:, 0, :]
+            else:
+                return outputs.last_hidden_state[:, 0, :]
+        
+        elif self.config.forward_type == "sbert_mean":
+            token_embeddings = outputs["last_hidden_state"]
+            input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+            sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            return sum_embeddings / sum_mask
+        
+        elif self.config.forward_type == "simcse_sbert":
+            token_embeddings = outputs["last_hidden_state"]
+            input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+            sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            forward_sbert = sum_embeddings / sum_mask
+
+            if isinstance(outputs, dict):
+                forward_simcse = outputs["last_hidden_state"][:, 0, :]
+            else:
+                forward_simcse = outputs.last_hidden_state[:, 0, :]
+
+            return forward_sbert, forward_simcse
+        
     
-    def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
-        """
-        Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
-        Since the similarity label is a number in the interval [0,5], your output should be normalized to the interval [0,5];
-        it will be handled as a logit by the appropriate loss function.
-        Dataset: STS
-        """
-        # Embeddings for both sentences
-        emb1 = self.forward(input_ids_1, attention_mask_1)
-        emb2 = self.forward(input_ids_2, attention_mask_2)
-
-        features = torch.cat([emb1, emb2, torch.abs(emb1 - emb2)], dim=1)
-        
-        features = self.sts_dropout(features)
-        logits = self.sts_regressor(features).squeeze()
-        
-        # Return raw logits for MSE
-        return logits
-
-
     def predict_sentiment(self, input_ids, attention_mask, sentences):
         """
         Given a batch of sentences, outputs logits for classifying sentiment.
@@ -199,8 +248,88 @@ class MultitaskBERT(nn.Module):
         combined_features = self.sentiment_dropout(combined_features) # HS: dropout before final layer
         logits = self.sentiment_classifier(combined_features) ## Final logits for 5 classes
         return logits
-    
+        
+    def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+        """
+        Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
+        Since the similarity label is a number in the interval [0,5], your output should be normalized to the interval [0,5];
+        it will be handled as a logit by the appropriate loss function.
+        Dataset: STS
+        """
 
+        if self.config.sts_training_type == "standard":
+            # Embeddings for both sentences
+            emb1 = self.forward(input_ids_1, attention_mask_1)
+            emb2 = self.forward(input_ids_2, attention_mask_2)
+
+            features = torch.cat([emb1, emb2, torch.abs(emb1 - emb2)], dim=1)
+            
+            features = self.sts_dropout(features)
+            logits = self.sts_regressor(features).squeeze()
+            
+            # Return raw logits for MSE
+            return logits
+
+        elif self.config.sts_training_type == "sbert" or self.config.sts_training_type == "simcse":
+            # Embeddings for both sentences
+            emb1 = self.forward(input_ids_1, attention_mask_1)
+            emb2 = self.forward(input_ids_2, attention_mask_2)
+            emb1 = F.normalize(emb1, p=2, dim=1)
+            emb2 = F.normalize(emb2, p=2, dim=1)
+            
+            # Cosine similarity
+            cosine_sim = torch.sum(emb1 * emb2, dim=1)
+            
+            return cosine_sim * 2.5 + 2.5  # Scale to [0, 5]
+        
+        elif self.config.sts_training_type == "simcse_sbert":
+            if self.training:
+                # Return both during training
+                sbert_pred, simcse_pred = self._get_both_predictions(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
+                return sbert_pred, simcse_pred
+            else:
+                # During evaluation use only SBERT
+                emb1, _ = self.forward(input_ids_1, attention_mask_1)
+                emb2, _ = self.forward(input_ids_2, attention_mask_2)
+                emb1 = F.normalize(emb1, p=2, dim=1)
+                emb2 = F.normalize(emb2, p=2, dim=1)
+                cosine_sim = torch.sum(emb1 * emb2, dim=1)
+                return cosine_sim * 2.5 + 2.5
+    
+    def _get_both_predictions(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+        """
+        Internal method that returns both predictions for simcse_sbert training
+        """
+        # Use the special forward mode for training
+        emb1_sbert, emb1_simcse = self.forward(input_ids_1, attention_mask_1)
+        emb2_sbert, emb2_simcse = self.forward(input_ids_2, attention_mask_2)
+        
+        # Calculate both predictions
+        emb1_sbert = F.normalize(emb1_sbert, p=2, dim=1)
+        emb2_sbert = F.normalize(emb2_sbert, p=2, dim=1)
+        sbert_sim = torch.sum(emb1_sbert * emb2_sbert, dim=1)
+        sbert_pred = sbert_sim * 2.5 + 2.5
+        
+        emb1_simcse = F.normalize(emb1_simcse, p=2, dim=1)
+        emb2_simcse = F.normalize(emb2_simcse, p=2, dim=1)
+        simcse_sim = torch.sum(emb1_simcse * emb2_simcse, dim=1)
+        simcse_pred = simcse_sim * 2.5 + 2.5
+        
+        return sbert_pred, simcse_pred
+            
+    
+    def get_simcse_embeddings(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
+        """
+        Get SimCSE embeddings for contrastive loss training
+        Returns embeddings for both augmented versions of each sentence
+        """
+        # Get two different embeddings for each sentence (via dropout)
+        emb1_a = self.forward(input_ids_1, attention_mask_1)
+        emb1_b = self.forward(input_ids_1, attention_mask_1)  # Different due to dropout
+        emb2_a = self.forward(input_ids_2, attention_mask_2)
+        emb2_b = self.forward(input_ids_2, attention_mask_2)  # Different due to dropout
+        
+        return emb1_a, emb1_b, emb2_a, emb2_b
 
     def predict_paraphrase(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
@@ -233,14 +362,19 @@ class MultitaskBERT(nn.Module):
         attention_mask = torch.cat([attention_mask_1[:, :-1], attention_mask_2[:, 1:]], dim=1)
 
         # Pass the concatenated input through the model to get embeddings
-        cls_embedding = self.forward_etpc(input_ids, attention_mask)
+        cls_embedding = self.forward(input_ids, attention_mask)
         cls_embedding = self.paraphrase_type_dropout(cls_embedding)
         logits = self.paraphrase_type_classifier(cls_embedding)
         
         return logits
-    
+
+def ensure_directory_exists(filepath):
+    directory = os.path.dirname(filepath)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
 
 def save_model(model, optimizer, args, config, filepath):
+    ensure_directory_exists(filepath)
     save_info = {
         "model": model.state_dict(),
         "optim": optimizer.state_dict(),
@@ -254,7 +388,42 @@ def save_model(model, optimizer, args, config, filepath):
     torch.save(save_info, filepath)
     print(f"Saving the model to {filepath}.")
 
-## BONUS TASK
+####################### STS Fine-Tuning improvement ##########################
+def simcse_contrastive_loss(emb1, emb2, temperature=0.05):
+        """SimCSE contrastive loss"""
+        batch_size = emb1.size(0)
+        emb1 = F.normalize(emb1, dim=1)
+        emb2 = F.normalize(emb2, dim=1)
+        
+        # Negative similarities
+        neg_sim = torch.matmul(emb1, emb2.T) / temperature
+        
+        # Create labels: positive pairs are on the diagonal
+        labels = torch.arange(batch_size).to(emb1.device)
+        
+        # Cross entropy loss for both directions
+        loss1 = F.cross_entropy(neg_sim, labels)
+        loss2 = F.cross_entropy(neg_sim.T, labels)
+
+        return (loss1 + loss2) / 2
+        
+def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, last_epoch=-1):
+    """
+    Create a schedule with a learning rate that decreases linearly from the initial lr set in the optimizer to 0, after
+    a warmup period during which it increases linearly from 0 to the initial lr set in the optimizer.
+    """
+    def lr_lambda(current_step: int):
+        if current_step < num_warmup_steps:
+            return float(current_step) / float(max(1, num_warmup_steps))
+        return max(
+            0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
+        )
+
+    return LambdaLR(optimizer, lr_lambda, last_epoch)
+
+
+################################ BONUS TASK #####################################
+
 def evaluate_etpc_f1(model, dataloader, device):
     """
     Evaluates the model on the ETPC dataset and computes F1 scores
@@ -396,6 +565,14 @@ def train_multitask(args):
         # print("ETPC train label distribution (mean per class):", train_labels.mean(axis=0))
         # print("ETPC dev label distribution (mean per class):", dev_labels.mean(axis=0))
 
+    # Learn the number of steps for the scheduler
+    total_steps = 0
+    if (args.task == "sts" or args.task == "multitask"):
+        total_steps += len(sts_train_dataloader) * args.epochs
+    if (args.task == "etpc" or args.task == "multitask"):
+        total_steps += len(etpc_train_dataloader) * args.epochs
+
+    num_warmup_steps = int(total_steps * args.warmup_ratio)
 
     ## Initialize model
     config = {
@@ -404,6 +581,13 @@ def train_multitask(args):
         "data_dir": ".",
         "option": args.option,
         "local_files_only": args.local_files_only,
+        "regressor_type": args.regressor_type,
+        "forward_type": args.forward_type,
+        "sts_training_type": args.sts_training_type,
+        "use_pretrained_simcse": args.use_pretrained_simcse,
+        "simcse_model_path": args.simcse_model_path,
+        "max_batches": args.max_batches,
+        "file_path": args.filepath,
     }
     config = SimpleNamespace(**config)
 
@@ -425,7 +609,7 @@ def train_multitask(args):
         optimizer = AdamW(
             model.parameters(),
             lr=lr,
-            weight_decay=0.025,
+            weight_decay=0.01,
             correct_bias=False,
         )
     elif args.task == "sst":
@@ -435,7 +619,14 @@ def train_multitask(args):
         # Default optimizer
         lr = args.lr
         optimizer = AdamW(model.parameters(), lr=lr)
-
+    
+    #Learning rate scheduler
+    if args.task == "sts" or args.task == "etpc":
+        scheduler = get_linear_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=num_warmup_steps,
+        num_training_steps=total_steps
+    )
 
     best_dev_acc = float("-inf")
 
@@ -473,29 +664,156 @@ def train_multitask(args):
 
         # STS training
         if args.task == "sts" or args.task == "multitask":
-            for batch in tqdm(
-                sts_train_dataloader,
-                desc=f"train-sts-{epoch+1:02}",
-                disable=TQDM_DISABLE,
-            ):
-                b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                    batch["token_ids_1"].to(device),
-                    batch["attention_mask_1"].to(device),
-                    batch["token_ids_2"].to(device),
-                    batch["attention_mask_2"].to(device),
-                    batch["labels"].to(device).float(),
-                )
+            
+            batch_idx = 0
+            # Standard
+            if config.sts_training_type == "standard":
+                for batch in tqdm(
+                    sts_train_dataloader,
+                    desc=f"train-sts-{epoch+1:02}",
+                    disable=TQDM_DISABLE,
+                ):
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
 
-                optimizer.zero_grad()
-                predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                loss = F.mse_loss(predictions, b_labels.view(-1))
+                    optimizer.zero_grad()
+                    predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                    loss = F.mse_loss(predictions, b_labels.view(-1))
 
-                if config.option == "finetune":
-                    loss.backward()
-                    optimizer.step()
+                    if config.option == "finetune":
+                        loss.backward()
+                        optimizer.step()
+                        scheduler.step()
 
-                train_loss += loss.item()
-                num_batches += 1
+                    train_loss += loss.item()
+                    num_batches += 1
+
+                    if batch_idx >= config.max_batches and config.max_batches > 0:    
+                        break
+
+            # Sbert
+            elif config.sts_training_type == "sbert":
+                for batch in tqdm(
+                    sts_train_dataloader,
+                    desc=f"train-sts-{epoch+1:02}",
+                    disable=TQDM_DISABLE,
+                ):
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
+
+                    optimizer.zero_grad()
+                    predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                    loss = F.mse_loss(predictions, b_labels.view(-1))
+
+                    if config.option == "finetune":
+                        loss.backward()
+                        optimizer.step()
+                        scheduler.step()
+
+                    train_loss += loss.item()
+                    num_batches += 1
+
+                    batch_idx += 1
+
+                    if batch_idx >= config.max_batches and config.max_batches > 0:    
+                        break
+            
+            # SimCSE
+            elif config.sts_training_type == "simcse":
+                for batch in tqdm(
+                    sts_train_dataloader,
+                    desc=f"train-sts-simcse-{epoch+1:02}",
+                    disable=TQDM_DISABLE,
+                ):
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
+
+                    optimizer.zero_grad()
+
+                    # Call the method on your model instance
+                    emb1_a, emb1_b, emb2_a, emb2_b = model.get_simcse_embeddings(b_ids1, b_mask1, b_ids2, b_mask2)
+                    simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
+                    simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
+                    loss = simcse_loss1 + simcse_loss2
+                    
+                    if config.option == "finetune":
+                        loss.backward()
+                        optimizer.step()
+                        scheduler.step()
+
+                    train_loss += loss.item()
+                    num_batches += 1
+
+                    batch_idx += 1
+
+                    if batch_idx >= config.max_batches and config.max_batches > 0:    
+                        break
+            
+            # Combined SimCSE + SBERT
+            elif config.sts_training_type == "simcse_sbert":
+
+                for batch in tqdm(
+                    sts_train_dataloader,
+                    desc=f"train-sts-combined-{epoch+1:02}",
+                    disable=TQDM_DISABLE,
+                ):
+                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                        batch["token_ids_1"].to(device),
+                        batch["attention_mask_1"].to(device),
+                        batch["token_ids_2"].to(device),
+                        batch["attention_mask_2"].to(device),
+                        batch["labels"].to(device).float(),
+                    )
+
+                    optimizer.zero_grad()
+
+                    # Get predictions from model (returns tuple: sbert_pred, simcse_pred)
+                    predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                    sbert_pred, simcse_pred = predictions
+
+                    # SBERT MSE loss
+                    sbert_loss = F.mse_loss(sbert_pred, b_labels.view(-1))
+
+                    # SimCSE loss
+                    _, emb1_a = model.forward(b_ids1, b_mask1)
+                    _, emb1_b = model.forward(b_ids1, b_mask1)
+                    _, emb2_a = model.forward(b_ids2, b_mask2)
+                    _, emb2_b = model.forward(b_ids2, b_mask2)
+
+                    simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
+                    simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
+                    simcse_loss = simcse_loss1 + simcse_loss2
+                    
+                    # Combined Loss
+                    loss = args.alpha * simcse_loss + (1 - args.alpha) * sbert_loss
+                    
+                    if config.option == "finetune":
+                        loss.backward()
+                        optimizer.step()
+                        scheduler.step()
+
+                    train_loss += loss.item()
+                    num_batches += 1
+
+                    batch_idx += 1
+
+                    if batch_idx >= config.max_batches and config.max_batches > 0:    
+                        break
 
         # QQP training
         if args.task == "qqp" or args.task == "multitask":
@@ -517,7 +835,7 @@ def train_multitask(args):
                 b_labels = b_labels.to(device)
 
                 optimizer.zero_grad()
-                logits = model.predict_similarity(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
+                logits = model.predict_paraphrase(b_ids_1, b_mask_1, b_ids_2, b_mask_2)
                 loss = F.binary_cross_entropy_with_logits(logits, b_labels.float())
 
                 if config.option == "finetune":
@@ -551,10 +869,10 @@ def train_multitask(args):
                 if config.option == "finetune":
                     loss.backward()
                     optimizer.step()
+                    scheduler.step()
 
                 train_loss += loss.item()
                 num_batches += 1
-        
 
         train_loss = train_loss / num_batches
 
@@ -592,7 +910,7 @@ def train_multitask(args):
             "sts": (sts_train_corr, sts_dev_corr),
             "qqp": (quora_train_acc, quora_dev_acc),
             "etpc": (etpc_train_acc, etpc_dev_acc),
-            "multitask": (0, 0),  # TODO
+            "multitask": (0, 0),
         }[args.task]
 
         print(
@@ -603,6 +921,10 @@ def train_multitask(args):
             best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
 
+    if args.task == "sts":
+        return best_dev_acc
+    
+    
 def test_model(args):
     with torch.no_grad():
         device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
@@ -665,10 +987,8 @@ def get_args():
     parser.add_argument(
         "--sts_test", type=str, default="data/sts-similarity-test-student.csv"
     )
-
-    # TODO
-    # You should split the train data into a train and dev set first and change the
-    # default path of the --etpc_dev argument to your dev set.
+    
+    # NEW
     parser.add_argument(
         "--etpc_train", type=str, default="data/etpc-paraphrase-train.csv"
     )
@@ -773,11 +1093,54 @@ def get_args():
     return args
 
 
-if __name__ == "__main__":
+def main():
     args = get_args()
-    args.filepath = (
-        f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"  # save path
-    )
-    seed_everything(args.seed)  # fix the seed for reproducibility
-    train_multitask(args)
-    test_model(args)
+    
+    seed_everything(args.seed)
+    
+    # Run training and get the final correlation for STS task
+    if args.task == "sts":
+        correlation = train_multitask(args)
+    else:
+        train_multitask(args)  # Train without return value
+    
+    # Save results instead of model
+    if hasattr(args, 'save_results_only') and args.save_results_only and args.task == "sts":
+        os.makedirs("sts_sweep_results_both", exist_ok=True)
+        filename_parts = [args.sts_training_type]
+        filename_parts.append(f"seed_{args.seed}")
+        
+        if hasattr(args, 'alpha') and args.alpha is not None:
+            filename_parts.append(f"alpha_{args.alpha}")
+        
+        if hasattr(args, 'max_batches') and args.max_batches is not None:
+            filename_parts.append(f"batch_{args.max_batches}")
+        
+        filename_parts.append(f"corr_{correlation:.4f}")
+        filename = "_".join(filename_parts) + ".txt"
+        filepath = os.path.join("sts_sweep_results_both", filename)
+        
+        with open(filepath, 'w') as f:
+            f.write(f"Task: {args.task}\n")
+            f.write(f"Training type: {args.sts_training_type}\n")
+            f.write(f"Seed: {args.seed}\n")
+            f.write(f"Epochs: {args.epochs}\n")
+            f.write(f"Learning rate: {args.lr}\n")
+            f.write(f"Batch size: {args.batch_size}\n")
+            
+            if hasattr(args, 'alpha') and args.alpha is not None:
+                f.write(f"Alpha: {args.alpha}\n")
+            
+            if hasattr(args, 'max_batches') and args.max_batches is not None:
+                f.write(f"Max batches: {args.max_batches}\n")
+            
+            f.write(f"Final correlation: {correlation:.4f}\n")
+            f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
+        
+        print(f"Saved results to {filepath}")
+        print(f"Final correlation: {correlation:.4f}")
+    else:
+        test_model(args)
+
+if __name__ == "__main__":
+    main()

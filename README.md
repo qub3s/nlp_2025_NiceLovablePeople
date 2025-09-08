@@ -53,7 +53,7 @@ Leonardo Christian da Camara Silva:
 - Semantic Textual Similarity (STS)
 - bonus: paraphrase type detection with bert (PTD-bert)
 
-## Setup instructions
+Georg Eckardt: qub3s <br/>
 
 ## Methodology
 
@@ -313,9 +313,3 @@ Parts of the code are from the [`transformers`](https://github.com/huggingface/t
 Parts of the scripts and code were altered by [Jan Philip Wahle](https://jpwahle.com/) and [Terry Ruas](https://terryruas.com/).
 
 The project was modified by [Niklas Bauer](https://github.com/ItsNiklas/) for the 2025 DNLP course at the University of Göttingen.
-
-
-
-
-
-scp -r u17480@glogin.hpc.gwdg.de:/user/h.siddiqui/u17480/dnlp_summer2025/nlp_2025_NiceLovablePeople/predictions /Users/hamzaahmedsiddiqui/Documents/Jupyterlab/

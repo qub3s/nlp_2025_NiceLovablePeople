@@ -1,0 +1,10 @@
+Task: sts
+Training type: sbert
+Seed: 11712
+Epochs: 3
+Learning rate: 1e-05
+Batch size: 32
+Alpha: 0.5
+Max batches: 150.0
+Final correlation: 0.7532
+Timestamp: 2025-09-07T06:11:05.894192

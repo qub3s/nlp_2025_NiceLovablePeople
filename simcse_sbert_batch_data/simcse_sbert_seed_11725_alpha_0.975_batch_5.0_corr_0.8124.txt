@@ -1,0 +1,10 @@
+Task: sts
+Training type: simcse_sbert
+Seed: 11725
+Epochs: 5
+Learning rate: 2e-05
+Batch size: 64
+Alpha: 0.975
+Max batches: 5.0
+Final correlation: 0.8124
+Timestamp: 2025-09-08T02:14:07.264623
