@@ -6,7 +6,7 @@ import seaborn as sns
 import numpy as np
 # Specify the directory path
 directory_path = "slurm_files/"
-
+directory_path = "pooling"
 # Initialize dictionaries to store file contents
 file_contents = {}  # Stores the entire content of each file as a string
 file_lines = {}     # Stores the content of each file as a list of lines
@@ -67,13 +67,18 @@ unique_names = verlauf["Filename"].unique()
 colors = sns.color_palette("husl", len(unique_names))  # Farbpalette mit eindeutigen Farben
 
 # Erstelle den Plot
-plt.figure(figsize=(10, 6))  # Größeres Diagramm für bessere Lesbarkeit
+plt.figure(figsize=(12, 8))  # Größeres Diagramm für bessere Lesbarkeit
 
+verlauf = verlauf.drop(columns=["train_loss", "train"])
+
+max_bl = 0
 for i, name in enumerate(unique_names):
     # Filtere den DataFrame für den aktuellen "Filename"
     temp = verlauf[verlauf["Filename"] == name]
     # Plotte Linien und Scatter-Punkte für jeden Typ
     for col, marker in markers.items():
+        if "baseline" in name:
+            max_bl = max(temp["dev"].max(), max_bl)
         if "train_loss" in col or "train" in col:
             continue
         plt.plot(temp["epoch"], temp[col], label=f"{name.split('-')[0]} - {col.replace('_', ' ').title()}", color=colors[i], alpha=0.6)
@@ -84,22 +89,34 @@ legend_elements = []
 for i, name in enumerate(unique_names):
     for col, marker in markers.items():
         if "train_loss" in col or "train" in col:
-            continue
+            continue    
         legend_elements.append(Line2D([0], [0], color=colors[i], marker=marker, label=f"{name.split('-')[0]} - {col.replace('_', ' ').title()}", 
-                                       markersize=8, linestyle='-', alpha=0.8))
-plt.hlines(y=0.870,xmin=1,xmax=6, color='r', linestyle='--', label='BASELINE')  # Horizontale Linie bei y=0.75
+                                       markersize=10, linestyle='-', alpha=0.8))
+        
+# BASELINE
+plt.hlines(y=0.870, xmin=1, xmax=6, color='r', linestyle='--', label='BASELINE', alpha=0.3)  # Horizontale Linie bei y=0.870
+plt.hlines(y=max_bl, xmin=1, xmax=6, color='r', linestyle='--', label='NEW BASELINE', alpha=0.3)  # Horizontale Linie bei y=0.870
+plt.fill_between(x=[1, 6], y1=0.870, y2=max_bl, color='red', alpha=0.1, label='Wide Baseline')
+
+
 
 # Diagramm-Details hinzufügen
-plt.title("Training und Validierung über Epochen", fontsize=14)
-plt.xlabel("Epochen", fontsize=12)
-plt.ylabel("Werte", fontsize=12)
-plt.legend(handles=legend_elements, fontsize=10, loc="best")  # Benutzerdefinierte Legende
+plt.title("Validation Dev over Epochs", fontsize=18)  # Titel auf Englisch
+plt.xlabel("Epochs", fontsize=16)  # X-Achse auf Englisch
+plt.ylabel("Values", fontsize=16)  # Y-Achse auf Englisch
+
+# Schriftgröße der Achsen-Ticks anpassen
+plt.xticks(fontsize=14)  # Schriftgröße der X-Achsen-Ticks
+plt.yticks(fontsize=14)  # Schriftgröße der Y-Achsen-Ticks
+
+plt.legend(handles=legend_elements, fontsize=12, loc="best")  # Benutzerdefinierte Legende
 plt.grid(True, linestyle="--", alpha=0.7)  # Gitterlinien
 plt.tight_layout()  # Optimiert die Abstände im Plot
 
+# Bild speichern
+output_dir = "Bilder"
+os.makedirs(output_dir, exist_ok=True)  # Ordner erstellen, falls er nicht existiert
+plt.savefig(os.path.join(output_dir, "qqp_pooling_plot.png"), dpi=300)  # Speichere das Bild mit hoher Auflösung
+
 # Zeige den Plot an
 plt.show()
-# Zeige de
-print(verlauf)
-
-
