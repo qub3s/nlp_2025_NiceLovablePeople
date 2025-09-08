@@ -4,6 +4,7 @@
 *.pyc
 *.zip
 *output*
+*.jsonl
 logdir
 models
 slurm_files
