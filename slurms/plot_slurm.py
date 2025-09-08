@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 # Specify the directory path
-directory_path = "slurm_plot/"
+directory_path = "slurm_files/"
 
 # Initialize dictionaries to store file contents
 file_contents = {}  # Stores the entire content of each file as a string
@@ -30,11 +30,15 @@ for filename in os.listdir(directory_path):
 verlauf = pd.DataFrame(columns=["Filename","epoch", "train_loss", "train", "dev","Pa_acc","dev_par_acc"])
 for name in file_names:
     save = False
+    if ".err" in name:
+        continue
     for line in file_lines[name]:
-        if "Epoch" in line:
+        if "Epoch " in line:
             pattern = r"[-+]?\d*\.\d+|\d+"
             numbers = re.findall(pattern, line)
             numbers = [float(num) for num in numbers]
+            if len(numbers) < 2:
+                break
             verlauf = pd.concat([verlauf, pd.DataFrame({"Filename":[name],"epoch": [numbers[0]], "train_loss": [numbers[1]], "train": [numbers[2]], "dev": [numbers[3]],"Pa_acc": [0],"dev_par_acc": [0]})], ignore_index=True)
             if numbers[0]==6:
                 save = True
@@ -50,7 +54,6 @@ for name in file_names:
 
 
 from matplotlib.lines import Line2D
-print(plt.style.available)
 plt.style.use('seaborn-v0_8-paper')
 # Definiere Marker für die verschiedenen Typen
 markers = {
@@ -71,6 +74,8 @@ for i, name in enumerate(unique_names):
     temp = verlauf[verlauf["Filename"] == name]
     # Plotte Linien und Scatter-Punkte für jeden Typ
     for col, marker in markers.items():
+        if "train_loss" in col or "train" in col:
+            continue
         plt.plot(temp["epoch"], temp[col], label=f"{name.split('-')[0]} - {col.replace('_', ' ').title()}", color=colors[i], alpha=0.6)
         plt.scatter(temp["epoch"], temp[col], color=colors[i], marker=marker, edgecolor="black", s=50, alpha=0.8)
 
@@ -78,6 +83,8 @@ for i, name in enumerate(unique_names):
 legend_elements = []
 for i, name in enumerate(unique_names):
     for col, marker in markers.items():
+        if "train_loss" in col or "train" in col:
+            continue
         legend_elements.append(Line2D([0], [0], color=colors[i], marker=marker, label=f"{name.split('-')[0]} - {col.replace('_', ' ').title()}", 
                                        markersize=8, linestyle='-', alpha=0.8))
 plt.hlines(y=0.870,xmin=1,xmax=6, color='r', linestyle='--', label='BASELINE')  # Horizontale Linie bei y=0.75

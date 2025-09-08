@@ -279,6 +279,12 @@ The new implementation resulted in a decrease in accuracy from 0.883 to 0.826. T
 | 4 | Pre-training on an external dataset | 0.886 |
 | 5 | Final Combined Model | 0.887 |
 
+Introduction
+
+The following figure visualizes the performance of the different model variants during training. Each graph illustrates how the development accuracy (Dev Accuracy) evolved over the epochs, allowing for a direct visual comparison of each architecture's performance.
+![Development over 6 Epochs](pictures/qqp_acc.png)
+
+Comparison of Model Performance During Training. This graph displays the development accuracy (Dev Accuracy), training accuracy (Train Accuracy), and training loss (Train Loss) for various model configurations over 6 epochs. Each line represents one of the tested architectures. The use of different markers (e.g., circles for development accuracy, triangles for training accuracy) helps distinguish between the metrics. The red dashed line indicates the initial baseline accuracy of 0.870.
 
 
 ### Grete Cluster
