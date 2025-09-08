@@ -116,7 +116,9 @@ plt.tight_layout()  # Optimiert die Abstände im Plot
 # Bild speichern
 output_dir = "Bilder"
 os.makedirs(output_dir, exist_ok=True)  # Ordner erstellen, falls er nicht existiert
-plt.savefig(os.path.join(output_dir, "qqp_pooling_plot.png"), dpi=300)  # Speichere das Bild mit hoher Auflösung
-
+if directory_path == "pooling":
+    plt.savefig(os.path.join(output_dir, "qqp_pooling_plot.png"), dpi=300)  # Speichere das Bild mit hoher Auflösung
+elif directory_path == "slurm_files/":
+    plt.savefig(os.path.join(output_dir, "qqp_changes.png"), dpi=300)
 # Zeige den Plot an
 plt.show()
