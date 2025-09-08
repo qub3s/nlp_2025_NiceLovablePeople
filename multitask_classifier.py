@@ -266,7 +266,7 @@ class MultitaskBERT(nn.Module):
 
         if self.config.forward_type == "pooler":
             
-            if self.config.task == "qqp":
+            if args.task == "qqp":
                 pooling  = "mean" # works best for QQP
                 if pooling == "max":
                     embeddings = self.max_pooling(outputs, attention_mask)
