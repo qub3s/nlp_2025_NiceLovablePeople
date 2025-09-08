@@ -175,11 +175,15 @@ For the second part I will do hyperparameter finetuning to counter overfitting a
 
 ### Quora Question Pairs (QQP) - Question similarity
 
+To continue with the Quora Question Pairs (QQP) project, my main goal was to surpass the initial baseline development accuracy of 0.870. For this part i made a few specific adjustments to the hyperparameters. The execution time for 6 epochs consistently remained at around 77 minutes (±1 min) across all runs, so this metric will not be a focus for further analysis.
 
-<h3>Layer Change</h3>
+I decided to increase the number of epochs to 6 and reduce the learning rate to 1e-5. My intention was to give the model more time to learn while taking smaller steps during the training process. This approach was successful, and my Hyperparamer-fine-tuned model achieved a new peak development accuracy of `0.883`. Although this wasn't the final, comprehensive set of changes, I decided to establish this as my new, personal baseline for the project. My next step will be to implement more significant modifications to try and improve on this new benchmark.
+
+<h3>Multi-layer Perceptron Classifier for Paraphrase Detection</h3>
 <details> 
 
-**Explanation:**
+**Explanation**
+
 The original model used a single linear layer to classify paraphrases, which is a simplistic approach. The improved version replaces this with a **multi-layered classifier** to learn more complex patterns. This change is based on the principle that a deeper network can capture more nuanced relationships between the sentence embeddings, leading to better performance. The addition of a **GELU activation function** and an extra dropout layer introduces non-linearity and helps prevent overfitting.
 
 
@@ -188,10 +192,12 @@ The original model used a single linear layer to classify paraphrases, which is 
 
 The single `nn.Linear` layer for the `paraphrase_classifier` was replaced with a `nn.Sequential` block. This new architecture consists of two linear layers, a GELU activation, and a dropout layer. The first linear layer transforms the concatenated BERT embeddings (`BERT_HIDDEN_SIZE`) into a hidden size of 768, while the second layer outputs the final logit. To ensure stable training, the weights of both linear layers were initialized using **Xavier uniform initialization**, and their biases were set to zero.
 
-**Results:**
+**Results**
+
+The implementation of the new classifier resulted in a modest improvement in performance, with the accuracy increasing from 0.870 to 0.886.
 </details> 
 
-<h3>Logit return</h3>
+<h3>Paraphrase Detection: A Bi-Encoder Approach</h3>
 <details> 
 
 **Explanation**
@@ -212,28 +218,48 @@ The `predict_paraphrase` function was modified to first get the individual emb
 
 After obtaining the individual embeddings, the absolute difference `abs_diff = torch.abs(u - v)` was calculated. Finally, the three feature vectors—`u`, `v`, and `abs_diff`—were concatenated along the last dimension to form `combined_features`. This combined vector was then passed to the `paraphrase_classifier`, which was updated in the `__init__` function to accept an input size of `BERT_HIDDEN_SIZE * 3` to match the new feature representation. The output of the classifier is a single logit, which is then used for the final binary classification.
 
-**Results:**
+**Results**
+
+The implementation of the Siamese network with concatenated embeddings resulted in a decreased development accuracy, from a baseline of 0.883 to 0.803. This result is contrary to the expected improvement. A possible reason for this performance drop is the loss of contextual interaction between the two sentences that the original single-sequence approach provides. Although a Siamese network is generally effective, the direct concatenation and processing of both sentences by BERT in the baseline model might be capturing a crucial inter-sentence context that the separate-embedding approach misses. Additionally, the new, larger input to the classifier might be more difficult to train, and the model may have overfit on the training data, leading to a poorer generalization on the development set.
+
 </details> 
-<h3>MeanPooling</h3>
+<h3>Improving Embeddings with Mean Pooling and Layer Normalization</h3>
 <details> 
 
 **Explanation**
 
-The original model used the `[CLS]` token's embedding from BERT as the sentence representation. While this is a common practice, this single vector might not always capture the full semantic meaning of the entire sentence, especially for longer texts.
+In the initial model, the `pooler_output` was used for generating sentence embeddings. However, this output isn't always the best representation for semantic tasks like question-pair matching. My goal was to create a more robust and semantically meaningful sentence embedding.
 
-The new implementation improves this by using **mean pooling** to create the sentence embedding. Instead of relying on a single token, mean pooling computes the average of all the token embeddings in a sentence. This approach ensures that the representations of all tokens contribute to the final sentence embedding, providing a more comprehensive summary of the sentence's meaning. We expect this to result in a more robust and semantically richer embedding, which should lead to improved performance on the paraphrase detection task.
+I decided to try **mean pooling** on the last hidden state of the BERT model. Unlike the `pooler_output`, which is essentially just the representation of the `[CLS]` token, mean pooling averages the embeddings of all tokens in a sentence. This approach should provide a more comprehensive representation of the entire sentence's meaning, which could lead to better performance on the Quora Question Pairs (QQP) task.
+
+Additionally, I applied **Layer Normalization** to the embeddings. This technique helps to stabilize the training process and can improve model performance by ensuring that the inputs to the downstream layers have a consistent distribution. I hoped this would further enhance the quality of the embeddings.
 
 
 **Implementation**
 
-A new `mean_pooling` function was implemented to calculate the average of the token embeddings. This function takes the `last_hidden_state` from the BERT output and the `attention_mask`. The attention mask is used to correctly handle sentences of varying lengths by ignoring padding tokens in the average calculation.
+I implemented a new `mean_pooling` function that calculates the average of the `last_hidden_state` from the BERT model, using the `attention_mask` to correctly handle padded tokens. This ensures that only the actual words in a sentence contribute to the average. The function takes the `model_output` and `attention_mask` as input, performs an element-wise multiplication, sums the embeddings, and then divides by the sum of the mask to get the average.
 
-Inside the `forward` function, a conditional check was added for the "qqp" task. For this task, instead of returning the `pooler_output`, the `mean_pooling` function is called to get the sentence embedding. An additional **Layer Normalization** step is applied to the resulting embedding to stabilize the training process and potentially improve model performance. For other tasks, the model continues to use the `pooler_output` as before.
+In the `forward` pass, I added a condition to check if the task is "qqp." If it is, the new `mean_pooling` function is called to generate the embeddings. After mean pooling, I applied `nn.functional.layer_norm` to the resulting embeddings before returning them. For other tasks, the original `pooler_output` is still used.
 
-**Results:**
+**Results**
+
+The implementation of mean pooling and Layer Normalization led to a noticeable improvement in model performance. The accuracy increased from 0.883 to 0.886. This shows that using a more sophisticated embedding strategy, which captures the semantic content of the entire sentence, is more effective for the Quora Question Pairs task. This change demonstrates that the quality of the sentence embeddings is a important factor in the success of the model.
+
 </details> 
-<h3>Layer Change</h3>
+<h3>Adding a Contrastive Loss to Improve Paraphrase Detection</h3>
 <details> 
+
+**Explanation**
+
+In our paraphrase detection task, the goal is for the model to learn that semantically similar questions should have similar embeddings. While the standard binary cross-entropy loss trains the model to classify question pairs as paraphrases or not, it does not explicitly enforce this semantic similarity in the embedding space. My idea was to add a contrastive loss to the training process. This loss function would encourage the embeddings of similar questions to be closer to each other, while pushing the embeddings of dissimilar questions farther apart. By adding this as a regularizer, the model should not only classify correctly but also learn a more meaningful and structured embedding space, which I hoped would lead to better performance.
+
+**Implementaion**
+
+I introduced a secondary loss term, the **contrastive loss**, to the training loop. First, I modified the `predict_paraphrase` method to return the sentence embeddings (`u` and `v`) in addition to the classification logits. The embeddings were then normalized. A similarity matrix was computed using the dot product of these normalized embeddings. The contrastive loss was calculated using cross-entropy, where the model was trained to identify the matching pairs in the similarity matrix. This new loss term was then added to the original binary cross-entropy loss for classification, with a small weight of 0.1 to act as a regularizer. The total loss was then used for backpropagation.
+
+**Results** 
+
+The new implementation resulted in a decrease in accuracy from 0.883 to 0.826. This was an unexpected outcome, as the goal was to improve the model's performance by adding a contrastive objective. A possible reason for this drop could be the low weight of the contrastive loss (0.1). This might not have been enough to effectively regularize the model, leading to a suboptimal balance between the two loss functions. It is also possible that the model struggled to learn both a good classification boundary and a well-structured embedding space simultaneously. A better approach might involve a different weighting of the contrastive loss or a more careful tuning of the temperature parameter, which was set to a fixed value of 0.05.
 
 </details> 
 <h3>Layer Change</h3>
@@ -246,10 +272,12 @@ Inside the `forward` function, a conditional check was added for the "qqp" tas
 
 | Sno.| Experiment | Best Dev Accuracy |
 |---|--------------|-------------------|
-| 0 | Layer Change | 0.521 |
-| 1 | Logit return | 0.520 |
-| 2 | MeanPooling | 0.519 |
-| 3 | Cross Entropy Loss | 0.532 |
+| 0 | Multi-layer Perceptron Classifier | 0.886 |
+| 1 | Paraphrase Detection: A Bi-Encoder Approach | 0.803 |
+| 2 | Mean Pooling and Layer Normalization | 0.886 |
+| 3 | Contrastive Loss | 0.826 |
+| 4 | Pre-training on an external dataset | 0.886 |
+| 5 | Final Combined Model | 0.887 |
 
 
 
