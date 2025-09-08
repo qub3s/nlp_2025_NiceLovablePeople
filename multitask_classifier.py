@@ -143,6 +143,7 @@ class MultitaskBERT(nn.Module):
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
 
         if self.config.forward_type == "pooler":
+            print("AMON")
             return outputs["pooler_output"] 
         
         elif self.config.forward_type == "raw_cls":
@@ -553,7 +554,8 @@ def train_multitask(args):
         optimizer = AdamW(model.parameters(), lr=lr)
     
     # Learning rate scheduler
-    scheduler = get_linear_schedule_with_warmup(
+    if args.task == "sts" or args.task == "etpc":
+        scheduler = get_linear_schedule_with_warmup(
         optimizer,
         num_warmup_steps=num_warmup_steps,
         num_training_steps=total_steps
@@ -922,7 +924,7 @@ def get_args():
         type=str,
         help="Type of STS training",
         choices=("standard", "sbert", "simcse", "simcse_sbert"),
-        default="pooler",
+        default="standard",
     )
     # NEW: Save only correlation values
     parser.add_argument("--save_results_only", action="store_true",
