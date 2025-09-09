@@ -292,7 +292,7 @@ To continue with the Quora Question Pairs (QQP) project, my main goal was to sur
 
   
 
-I decided to increase the number of epochs to 6 and reduce the learning rate to 1e-5. My intention was to give the model more time to learn while taking smaller steps during the training process. This approach was successful, and my Hyperparamer-fine-tuned model achieved a new peak development accuracy of `0.883`. Although this wasn't the final, comprehensive set of changes, I decided to establish this as my new, personal baseline for the project. My next step will be to implement more significant modifications to try and improve on this new benchmark.
+I decided to increase the number of epochs to 6 and reduce the learning rate to 1e-5. The Hyperparamer-fine-tuned model achieved a new peak dev accuracy of `0.883`. Although this wasn't the final, comprehensive set of changes, I decided to establish this as my new, personal baseline for the project. My next step will be to implement more significant modifications to try and improve on this new benchmark.
 
   
 
@@ -348,7 +348,7 @@ The new implementation improves on this by treating the sentences separately. By
 
   
 
-This triplet of features allows the model to learn a better representation of the relationship between the sentences. It gives the model a more explicit signal about the magnitude of the differences between the two sentence vectors, which is a powerful indicator of their semantic similarity. This approach should lead to a **more robust and accurate model** for paraphrase detection.
+This triplet of features allows the model to learn a better representation of the relationship between the sentences. It gives the model a more explicit signal about the magnitude of the differences between the two sentence vectors, which is a powerful indicator of their semantic similarity. This approach should lead to a better and more accurate model for paraphrase detection.
 
   
 
@@ -426,7 +426,8 @@ In conclusion, Mean Pooling was the best strategy.
 
 ![Development over 6 Epochs](qqp_extra/Bilder/qqp_pooling_plot.png)
 
-The plot shows how the accuracy of each method changed over six training periods (epochs).  Given in red is the original baseline and the new self-made baseline. The graphs for `Cross Entropy Loss` and 'Bi-Encoder Approach' were not sown because the maximum accuracy is way below the baseline.
+The plot shows how the accuracy of each method changed over six epochs.  Given in red is the original baseline and the new self-made baseline. The graphs for `Cross Entropy Loss` and 'Bi-Encoder Approach' are not sown because the maximum accuracy is way below the baseline.
+
 </details>
 
 <h3>4. Adding a Contrastive Loss to Improve Paraphrase Detection</h3>
@@ -455,8 +456,10 @@ I am testing a the newly pre-trained ´SimCSE´ model that was developed by Leon
 This new model shows an improvement in performance compared to the baseline. The model shows one of the biggest improvment's with 0.887. It was also trained with a different amount of max batches, but these changes are negligible
 </details>
 
-  <h3>Combined Model</h3>
-  <details>
+<h3>Combined Model</h3>
+<details>
+
+This is the model used in the final commit.
 
 **Expectation**
 
@@ -470,6 +473,7 @@ The final combined model achieved a peak development accuracy of **0.887**. Whi
 </details>
 
 <h3>Summary of Experiments:</h3>
+
 <details>
 
   The main objective of this project was to improve an existing paraphrase detection model. Starting from an initial baseline accuracy of **0.870**, a hyperparameter tuning process (increasing epochs and lowering the learning rate) established an improved baseline of **0.883**. The goal was to surpass this new benchmark through new architectural and methodological.
@@ -493,7 +497,7 @@ The addition of a **Contrastive Loss** was also disappointing. The goal was to
 
 Interestingly, the performance of **Hierarchical Pooling**, which combined the [CLS] token and Mean Pooling, was **0.882**, slightly worse than Mean Pooling alone. This suggests that combining approaches does not always lead to improvement. It's possible that the two vectors contained redundant information or that the higher dimensionality of the combined vector made subsequent classification more difficult.
 
-A similar issue came up with the **Final Combined Model**, which showed no further improvement over the single best result (pre-training on an external dataset), which also achieved **0.887**. This raises the question if the different improvements were already addressing similar aspects of the problem. For example, the **pre-training** on external data might have already taught the model a robust semantic representation that subsequent architectural changes (like the Multi-layer Perceptron) only yielded marginal gains. The hypothesis is that a strong foundation, such as the one from pre-training, makes finer adjustments less impactful, as the biggest gains have already been achieved.
+A similar issue came up with the **Final Combined Model**, which showed no further improvement over the single best result (pre-training on an external dataset), which also achieved **0.887**. This raises the question if the different improvements were already addressing similar aspects of the problem. For example, the pre-training on external data might have already taught the model a robust semantic representation that subsequent architectural changes (like the Multi-layer Perceptron) only yielded marginal gains. The hypothesis is that a strong foundation, such as the one from pre-training, makes finer adjustments less impactful, as the biggest gains have already been achieved.
 
   
 
@@ -507,12 +511,12 @@ A similar issue came up with the **Final Combined Model**, which showed no furt
 | 5    | Final Combined Model                 | 0.887             |
 
 
-The following figure visualizes the performance of the different model variants during training. Each graph illustrates how the development accuracy (Dev Accuracy) evolved over the epochs, allowing for a direct visual comparison of each architecture's performance.
+The following figure visualizes the performance of the different model variants during training. 
 
 ![Development over 6 Epochs](qqp_extra/Bilder/qqp_changes.png)
 
 
-Comparison of Model Performance During Training. This graph displays the Dev accuracy for various model configurations over 6 epochs. Each line represents one of the tested architectures. The red dashed lines indicates the initial baseline accuracy of 0.870 and the self-made baseline.
+This graph displays the Dev accuracy for various model configurations over 6 epochs. Each line represents one of the tested architectures. The red dashed lines indicates the initial baseline accuracy of 0.870 and the self-made baseline. Only the additions that made it over the baseline are shown.
 
 </details>
 
