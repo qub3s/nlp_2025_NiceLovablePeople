@@ -805,7 +805,7 @@ On our validation set, we received a wide range of results depending on the inpu
 
 
 ### Grete Cluster
-To run the tasks on the Grete cluster we adapted and used the `run_train.sh` script given to us.
+To run the tasks on the Grete cluster we adapted and used the `run_train.sh` script given to us. Before this file can be executed the "setup_gwdg.sh" needs to be executed.
 
 ## AI-Usage 
 AI (debugging) support such as ChatGPT were used, a detailed AI-Usage card will be provided in the final report.
