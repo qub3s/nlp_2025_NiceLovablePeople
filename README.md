@@ -433,31 +433,18 @@ The plot shows how the accuracy of each method changed over six training periods
 
 <details>
 
-  
-
 **Explanation**
-
-  
 
 While the standard binary cross-entropy loss trains the model to classify question pairs as paraphrases or not, it does not explicitly enforce this semantic similarity in the embedding space. My idea was to add a contrastive loss to the training process. This loss function would encourage the embeddings of similar questions to be closer to each other, while pushing the embeddings of dissimilar questions farther apart. By adding this as a regularizer, the model should not only classify correctly but also learn a more meaningful and structured embedding space, which I hoped would lead to better performance.
 
-  
-
 **Implementaion**
-
-  
 
 I introduced a secondary loss term, the **contrastive loss**, to the training loop. First, I modified the `predict_paraphrase` method to return the sentence embeddings (`u` and `v`) in addition to the classification logits. The embeddings were then normalized. A similarity matrix was computed using the dot product of these normalized embeddings. The contrastive loss was calculated using cross-entropy, where the model was trained to identify the matching pairs in the similarity matrix. This new loss term was then added to the original binary cross-entropy loss for classification, with a small weight of 0.1 to act as a regularizer. The total loss was then used for backpropagation.
 
-  
-
 **Results** 
-
-  
 
 The new implementation resulted in a decrease in accuracy from 0.883 to 0.826. This was an unexpected outcome, as the goal was to improve the model's performance by adding a contrastive objective.  It is also possible that the model struggled to learn both a good classification boundary and a well-structured embedding space simultaneously. A better approach might involve a different weighting of the contrastive loss or a more careful tuning of the temperature parameter, which was set to a fixed value of 0.05.
 
-  
 
 </details>
 
@@ -521,14 +508,12 @@ A similar issue came up with the **Final Combined Model**, which showed no furt
 | 5    | Final Combined Model                 | 0.887             |
 
 
-
 The following figure visualizes the performance of the different model variants during training. Each graph illustrates how the development accuracy (Dev Accuracy) evolved over the epochs, allowing for a direct visual comparison of each architecture's performance.
 
 ![Development over 6 Epochs](qqp_extra/Bilder/qqp_changes.png)
 
-  
 
-Comparison of Model Performance During Training. This graph displays the development accuracy (Dev Accuracy), training accuracy (Train Accuracy), and training loss (Train Loss) for various model configurations over 6 epochs. Each line represents one of the tested architectures. The use of different markers (e.g., circles for development accuracy, triangles for training accuracy) helps distinguish between the metrics. The red dashed line indicates the initial baseline accuracy of 0.870.
+Comparison of Model Performance During Training. This graph displays the Dev accuracy for various model configurations over 6 epochs. Each line represents one of the tested architectures. The red dashed lines indicates the initial baseline accuracy of 0.870 and the self-made baseline.
 
 ### Semantic Textual Similarity (STS) - Measuring text meaning similarity
 
