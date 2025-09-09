@@ -141,7 +141,7 @@ class MultitaskBERT(nn.Module):
 
         
         # QQP
-        if args.task == "qqp":
+        if config.regressor_type == "qqp":
             self.paraphrase_classifier = nn.Sequential(
                 nn.Linear(BERT_HIDDEN_SIZE, 768),
                 nn.GELU(),
@@ -1093,7 +1093,7 @@ def get_args():
         "--regressor_type",
         type=str,
         help="Type of regressor to use: simple or complex",
-        choices=("simple", "complex", "sbert"),
+        choices=("simple", "complex", "sbert","qqp"),
         default="simple",
     )
 
