@@ -471,6 +471,20 @@ This new model shows an improvement in performance compared to the baseline. The
   <h3>Combined Model</h3>
   <details>
 
+**Expectation**
+
+Based on the results of the experiments, The goal was to create a optimized model by combining the most successful components. The goal was to leverage the strengths of each improvement to achieve a performance that surpassed the highest individual accuracy. I chose to use three key modifications: **Mean Pooling** for a more comprehensive sentence representation, a **Multi-Layer Perceptron (MLP) classifier** for a more powerful and non-linear classification head, and the  **new model** that had already demonstrated improved performance. My hypothesis was that the combination of a richer input representation and a stronger classification layer, built on an already-strong foundation, would result in a good leap in accuracy. 
+
+
+**Results**
+
+The final combined model achieved a peak development accuracy of **0.887**. While this result represents the highest accuracy achieved during the project, the improvement over the previous best of 0.887 from the individual Mean Pooling and MLP experiments was minimal. This outcome suggests a case of diminishing returns, where adding incremental improvements to an already optimized model bring no longer significant gains. The combination of features did not produce the expected effect. This implies that the current architecture and dataset may have a performance ceiling, and further  improvements would require a more fundamental change, such as migrating to a more advanced pre-trained model or different training paradigms.
+
+</details>
+
+<h3>Summary of Experiments:</h3>
+<details>
+
   The main objective of this project was to improve an existing paraphrase detection model. Starting from an initial baseline accuracy of **0.870**, a hyperparameter tuning process (increasing epochs and lowering the learning rate) established an improved baseline of **0.883**. The goal was to surpass this new benchmark through new architectural and methodological.
 
 
@@ -495,9 +509,6 @@ Interestingly, the performance of **Hierarchical Pooling**, which combined the 
 A similar issue came up with the **Final Combined Model**, which showed no further improvement over the single best result (pre-training on an external dataset), which also achieved **0.887**. This raises the question if the different improvements were already addressing similar aspects of the problem. For example, the **pre-training** on external data might have already taught the model a robust semantic representation that subsequent architectural changes (like the Multi-layer Perceptron) only yielded marginal gains. The hypothesis is that a strong foundation, such as the one from pre-training, makes finer adjustments less impactful, as the biggest gains have already been achieved.
 
 </details>
-
-<h3>Summary of Experiments:</h3>
-
   
 
 | Sno. | Experiment                           | Best Dev Accuracy |
@@ -509,11 +520,7 @@ A similar issue came up with the **Final Combined Model**, which showed no furt
 | 4    | Pre-training on an external dataset  | 0.887             |
 | 5    | Final Combined Model                 | 0.887             |
 
-  
 
-Introduction
-
-  
 
 The following figure visualizes the performance of the different model variants during training. Each graph illustrates how the development accuracy (Dev Accuracy) evolved over the epochs, allowing for a direct visual comparison of each architecture's performance.
 
