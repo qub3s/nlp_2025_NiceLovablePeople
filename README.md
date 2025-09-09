@@ -801,11 +801,23 @@ On our validation set, we received a wide range of results depending on the inpu
 
 
 
-### Grete Cluster
-To run the tasks on the Grete cluster we adapted and used the `run_train.sh` script given to us. Before this file can be executed the "setup_gwdg.sh" needs to be executed.
+## Grete Cluster Execution
+
+1.  **Setup Environment:**
+    ```bash
+    sbatch setup_gwdg.sh
+    ```
+    *Wait for this job to complete (`COMPLETED` state) before proceeding.*
+
+2.  **Run Training:**
+    ```bash
+    sbatch run_train.sh
+    ```
+
+**Note:** The training job depends on the environment created by the setup script. Always run `setup_gwdg.sh` first and ensure it finishes successfully.
 
 ## AI-Usage 
-AI (debugging) support such as ChatGPT were used, a detailed AI-Usage card will be provided in the final report.
+AI (debugging) support such as ChatGPT were used, a detailed AI-Usage cards are placed int the ai_usage_cards folder.
 
 ## Acknowledgement
 The project description, partial implementation, and scripts were adapted from the default final project for the Stanford [CS 224N class](https://web.stanford.edu/class/cs224n/) developed by Gabriel Poesia, John, Hewitt, Amelie Byun, John Cho, and their (large) team (Thank you!)
