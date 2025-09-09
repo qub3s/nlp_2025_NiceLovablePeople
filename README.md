@@ -526,13 +526,14 @@ This chapter investigates methods for enhancing semantic textual similarity (STS
 
 <details>
 Remarks: For all plots 15 different seeds were used to compute 95% confidence intervalls. The baseline of the model with minBert had a 0.371 dev correlation in Part-01.
-</details>
+
 
 ![STS task Framework](STS_Plots_Pretrain/graphic.png)
 *Figure 1: Framework for STS improvements*
 
+</details>
 
-<h3>Pretrain the given Basemodel with SimCSE</h3>
+<h3>1. Pretrain the given Basemodel with SimCSE</h3>
 <details>
 
 
@@ -562,7 +563,7 @@ The supervised SimCSE model achieved a Spearman correlation of 0.8216, significa
 
 </details>
 
-<h3>SBert Finetuning</h3>
+<h3>2. SBert Finetuning</h3>
 <details>
 
 
@@ -591,7 +592,7 @@ A possible explanation is that the pretrained SimCSE model is already good at ge
 
 </details>
 
-<h3>SimCSE Finetuning</h3>
+<h3>3. SimCSE Finetuning</h3>
 <details>
 
 
@@ -617,7 +618,7 @@ If one compares the SBERT fine-tuning approach with the SimCSE fine-tuning appro
 *Figure 3: SBert performance for different training data size (Batchsize=32 with 5719 training sentence pairs)*
 </details>
 
-<h3>SBert + SimCSE Finetuning</h3>
+<h3>4. SBert + SimCSE Finetuning</h3>
 <details>
 
 
@@ -650,7 +651,7 @@ In addition, experiments with varying training data sizes revealed a behavior si
 
 </details>
 
-<h3>Summary of Experiments and literature:</h3>
+<h3>5. Summary of Experiments and literature:</h3>
 <details>
 
 **Hyperparameters used for final SimCSE + SBert Model with pretrained SImCSE:**
