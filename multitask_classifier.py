@@ -97,7 +97,7 @@ class MultitaskBERT(nn.Module):
         # Initialize weights properly
         for layer in self.paraphrase_classifier:
             if isinstance(layer, nn.Linear):
-                nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain('gelu'))
+                nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain('relu'))
                 nn.init.constant_(layer.bias, 0.0)
 
         # Paraphrase type detection
@@ -187,7 +187,7 @@ class MultitaskBERT(nn.Module):
         ], dim=-1)  # Total features: 768 * 6 = 4608
         
         # Layer normalization for stable training
-        combined_features = nn.functional.layer_norm(combined_features, combined_features.shape[1:])
+        combined_features = nn.functional.layer_norm(combined_features, (combined_features.size(1),))
         
         # Pass through enhanced classifier with non-linearities
         logits = self.paraphrase_classifier(combined_features)
