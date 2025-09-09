@@ -55,8 +55,6 @@ Leonardo Christian da Camara Silva:
 - Pretrain SimCSE on NLI datasets (Lead)
 - bonus: Paraphrase type detection with bert (PTD-bert)
 
-Georg Eckardt: qub3s <br/>
-
 ## Methodology
 
 
