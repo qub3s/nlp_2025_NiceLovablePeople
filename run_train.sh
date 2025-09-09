@@ -1,10 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=run_all
-<<<<<<< HEAD
-#SBATCH -t 02:40:00                  # estimated time # TODO: adapt to your needs
-=======
 #SBATCH -t 00:120:00                  # estimated time # TODO: adapt to your needs
->>>>>>> georg
 #SBATCH -p grete:shared              # the partition you are training on (i.e., which nodes), for nodes see sinfo -p grete:shared --format=%N,%G
 #SBATCH -G A100:1                    # take 1 GPU, see https://docs.hpc.gwdg.de/compute_partitions/gpu_partitions/index.html for more options
 #SBATCH --mem-per-gpu=8G             # setting the right constraints for the splitted gpu partitions
@@ -85,7 +81,7 @@ echo -e "\nStarting PTD-Bert\n"
 
 # Paraphrase Type Detection
 echo -e "\nStarting PTD\n"
-#python bart_detection.py --use_gpu
+python bart_detection.py --use_gpu
 
 # Paraphrase Generation
 echo -e "\nStarting PG\n"
