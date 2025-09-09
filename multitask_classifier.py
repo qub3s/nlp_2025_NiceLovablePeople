@@ -141,7 +141,7 @@ class MultitaskBERT(nn.Module):
 
         
         # QQP
-        if config.regressor_type == "qqp":
+        if hasattr(args, 'task') and args.task == "qqp":
             self.paraphrase_classifier = nn.Sequential(
                 nn.Linear(BERT_HIDDEN_SIZE, 768),
                 nn.GELU(),
@@ -154,6 +154,10 @@ class MultitaskBERT(nn.Module):
             nn.init.constant_(self.paraphrase_classifier[0].bias, 0.0)
             nn.init.xavier_uniform_(self.paraphrase_classifier[3].weight)
             nn.init.constant_(self.paraphrase_classifier[3].bias, 0.0)
+        else:
+            # Einfacher Classifier für andere Tasks
+            self.paraphrase_classifier = nn.Linear(BERT_HIDDEN_SIZE, 1)
+            self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
         
 
         # Paraphrase type detection
