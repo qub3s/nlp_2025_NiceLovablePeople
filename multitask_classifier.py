@@ -88,7 +88,7 @@ class MultitaskBERT(nn.Module):
             bert_state_dict = {}
             for key, value in state_dict.items():
                 if key.startswith('bert.'):
-                    new_key = key[5:]  # Remove 'bert.' prefix
+                    new_key = key[5:]
                     bert_state_dict[new_key] = value
             
             # Load the BERT weights
@@ -447,11 +447,11 @@ class MultitaskBERT(nn.Module):
         Get SimCSE embeddings for contrastive loss training
         Returns embeddings for both augmented versions of each sentence
         """
-        # Get two different embeddings for each sentence (via dropout)
+        # Get two different embeddings for each sentence (dropout)
         emb1_a = self.forward(input_ids_1, attention_mask_1)
-        emb1_b = self.forward(input_ids_1, attention_mask_1)  # Different due to dropout
+        emb1_b = self.forward(input_ids_1, attention_mask_1)
         emb2_a = self.forward(input_ids_2, attention_mask_2)
-        emb2_b = self.forward(input_ids_2, attention_mask_2)  # Different due to dropout
+        emb2_b = self.forward(input_ids_2, attention_mask_2)
         
         return emb1_a, emb1_b, emb2_a, emb2_b
 

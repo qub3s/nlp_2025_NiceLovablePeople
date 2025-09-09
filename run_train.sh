@@ -38,25 +38,27 @@ echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # STS
 echo -e "\nStarting STS\n"
-### Fine-Tune ###
+### Fine-Tune + Pretrained SimCSE###
+# Standard
 #python multitask_classifier.py --task sts --option finetune --regressor_type simple --forward_type raw_cls --sts_training_type simcse --epochs 5 --lr 3e-5 --batch_size 64 --use_gpu --use_pretrained_simcse --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" --max_batches 10
 
-#Best Sbert
+# Sbert
 #python multitask_classifier.py --task sts --option finetune --regressor_type sbert --forward_type sbert_mean --sts_training_type sbert --use_pretrained_simcse --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" --max_batches 20 --epochs 3 --lr 1e-5 --batch_size 32 --use_gpu
 
-#SimCSE
+# SimCSE
 #python multitask_classifier.py --task sts --option finetune --regressor_type simple --forward_type raw_cls --sts_training_type simcse --use_pretrained_simcse --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" --max_batches 15 --epochs 10 --lr 3e-5 --batch_size 64 --use_gpu
 
-# SBert + SimCSE
-#python multitask_classifier.py --task sts --option finetune --regressor_type simple --sts_training_type simcse_sbert --forward_type simcse_sbert --use_pretrained_simcse --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" --max_batches 10 --epochs 7 --batch_size 64 --lr 2e-5 --alpha 0.975 --use_gpu
+# SBert + SimCSE 
+python multitask_classifier.py --task sts --option finetune --regressor_type simple --sts_training_type simcse_sbert --forward_type simcse_sbert --use_pretrained_simcse --simcse_model_path "models/simcse_supervised/best_model_epoch3_corr0.8216.pt" --max_batches 10 --epochs 7 --batch_size 64 --lr 2e-5 --alpha 0.975 --use_gpu
 
 ### Fine-Tune ###
+# Standard
 #python multitask_classifier.py --task sts --option finetune --regressor_type simple --forward_type pooler --sts_training_type standard --epochs 5 --lr 3e-5 --batch_size 64 --use_gpu 
 
-#Best Sbert
+# Sbert
 #python multitask_classifier.py --task sts --option finetune --regressor_type sbert --forward_type sbert_mean --sts_training_type sbert --epochs 3 --lr 1e-5 --batch_size 32 --use_gpu 
 
-#SimCSE
+# SimCSE
 #python multitask_classifier.py --task sts --option finetune --regressor_type simple --forward_type raw_cls --sts_training_type simcse --epochs 10 --lr 3e-5 --batch_size 64 --use_gpu 
 
 # SBert + SimCSE
@@ -64,11 +66,7 @@ echo -e "\nStarting STS\n"
 
 
 ### Pre Fine-Tune with SimCSE ###
-#python train_simcse_nli.py --supervised --epochs 3 --batch_size 64 --lr 3e-5
-#python -u train_simcse_nli.py --epochs 1 --batch_size 64 --lr 3e-5
-#python -u train_simcse_nli.py --epochs 2 --batch_size 8 --lr 3e-5 --small_subset --subset_size 500
-#python train_simcse_nli.py --supervised --epochs 2 --batch_size 8 --lr 3e-5 --small_subset --subset_size 500
-#python train_test_simcse.py --supervised --epochs 5 --batch_size 64 --lr 3e-5 --pooling_method mean --gradient_accumulation 2
+#python simcse_pretrain.py --supervised --epochs 5 --batch_size 64 --lr 3e-5 --pooling_method mean --gradient_accumulation 2
 
 # QQP
 echo -e "\nStarting QQP\n"
