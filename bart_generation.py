@@ -303,5 +303,8 @@ def finetune_paraphrase_generation(args):
 
 if __name__ == "__main__":
     args = get_args()
+   
+    name = "128"
+    print(name)
     seed_everything(args.seed)
-    finetune_paraphrase_generation(args)
+    finetune_paraphrase_generation(args, 0, name)

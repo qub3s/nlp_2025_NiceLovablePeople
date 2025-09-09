@@ -70,6 +70,7 @@ class BertSelfAttention(nn.Module):
         # adding tokens with a large negative number.
 
         ### TODO
+
         # Multiply key and query and divide is by the squareroot of its width
         X = torch.matmul(query, key.transpose(2,3)) / math.sqrt(key.shape[3]) 
         X = X + attention_mask ## HS: attention mask removed for bidirectional context
