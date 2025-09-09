@@ -1,0 +1,309 @@
+================================================================================
+JobID = 10820209
+User = u17477, Account = nhr_ni_dnlpss25_g04
+Partition = grete:shared, Nodelist = ggpu151
+================================================================================
+Submitting job with sbatch from directory: /mnt/vast-nhr/home/georg.eckardt/u17477/nlp_2025_NiceLovablePeople
+Home directory: /user/georg.eckardt/u17477
+Working directory: /mnt/vast-nhr/home/georg.eckardt/u17477/nlp_2025_NiceLovablePeople
+Current node: ggpu151
+Python 3.10.18
+Collecting environment information...
+PyTorch version: 2.2.0
+Is debug build: False
+CUDA used to build PyTorch: 12.1
+ROCM used to build PyTorch: N/A
+
+OS: Rocky Linux 8.10 (Green Obsidian) (x86_64)
+GCC version: (GCC) 8.5.0 20210514 (Red Hat 8.5.0-26)
+Clang version: Could not collect
+CMake version: version 3.26.5
+Libc version: glibc-2.28
+
+Python version: 3.10.18 | packaged by conda-forge | (main, Jun  4 2025, 14:45:41) [GCC 13.3.0] (64-bit runtime)
+Python platform: Linux-4.18.0-553.54.1.el8_10.x86_64-x86_64-with-glibc2.28
+Is CUDA available: True
+CUDA runtime version: Could not collect
+CUDA_MODULE_LOADING set to: LAZY
+GPU models and configuration: GPU 0: NVIDIA A100-SXM4-80GB
+Nvidia driver version: 550.163.01
+cuDNN version: Could not collect
+HIP runtime version: N/A
+MIOpen runtime version: N/A
+Is XNNPACK available: True
+
+CPU:
+Architecture:        x86_64
+CPU op-mode(s):      32-bit, 64-bit
+Byte Order:          Little Endian
+CPU(s):              128
+On-line CPU(s) list: 0-127
+Thread(s) per core:  2
+Core(s) per socket:  32
+Socket(s):           2
+NUMA node(s):        2
+Vendor ID:           AuthenticAMD
+CPU family:          25
+Model:               1
+Model name:          AMD EPYC 7513 32-Core Processor
+Stepping:            1
+CPU MHz:             1500.000
+CPU max MHz:         3681.6399
+CPU min MHz:         1500.0000
+BogoMIPS:            5199.85
+Virtualization:      AMD-V
+L1d cache:           32K
+L1i cache:           32K
+L2 cache:            512K
+L3 cache:            32768K
+NUMA node0 CPU(s):   0-31,64-95
+NUMA node1 CPU(s):   32-63,96-127
+Flags:               fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl nonstop_tsc cpuid extd_apicid aperfmperf pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 invpcid_single hw_pstate ssbd mba ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local clzero irperf xsaveerptr wbnoinvd amd_ppin brs arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold v_vmsave_vmload vgif v_spec_ctrl umip pku ospke vaes vpclmulqdq rdpid overflow_recov succor smca fsrm
+
+Versions of relevant libraries:
+[pip3] numpy==1.26.4
+[pip3] torch==2.2.0
+[pip3] torchaudio==2.2.0
+[pip3] torchvision==0.17.0
+[pip3] triton==2.2.0
+[conda] blas                      1.0                         mkl    conda-forge
+[conda] libblas                   3.9.0            16_linux64_mkl    conda-forge
+[conda] libcblas                  3.9.0            16_linux64_mkl    conda-forge
+[conda] liblapack                 3.9.0            16_linux64_mkl    conda-forge
+[conda] libopenvino-pytorch-frontend 2025.2.0             hecca717_1    conda-forge
+[conda] mkl                       2022.2.1         h84fe81f_16997    conda-forge
+[conda] numpy                     1.26.4          py310hb13e2d6_0    conda-forge
+[conda] pytorch                   2.2.0           py3.10_cuda12.1_cudnn8.9.2_0    pytorch
+[conda] pytorch-cuda              12.1                 ha16c6d3_6    pytorch
+[conda] pytorch-mutex             1.0                        cuda    pytorch
+[conda] torchaudio                2.2.0               py310_cu121    pytorch
+[conda] torchtriton               2.2.0                     py310    pytorch
+[conda] torchvision               0.17.0              py310_cu121    pytorch
+
+Current Branch: georg
+Latest Commit: a550873
+Uncommitted Changes: 15
+
+
+Starting SST
+
+
+Starting STS
+
+
+Starting QQP
+
+
+Starting PTD-Bert
+
+
+Starting PTD
+
+32_alphas
+Start:  1
+[376, 125, 134, 369, 479, 1757, 305, 140, 4, 10, 540, 33, 118, 14, 50, 28, 313, 522, 49, 202, 2082, 552, 240, 2705, 425, 63]
+Loaded 2730 training samples.
+1e-05
+32
+100
+32_alphas
+Train Loss:  0.05818674058747896
+Validation Loss:  0.031073962464385357
+Train Loss:  0.03606766226121049
+Validation Loss:  0.03107866402974145
+Train Loss:  0.03579502282799154
+Validation Loss:  0.030864119820762426
+Train Loss:  0.03483363953621491
+Validation Loss:  0.030283915881429695
+Train Loss:  0.03352023541009513
+Validation Loss:  0.030761708835295092
+Train Loss:  0.031235763499432283
+Validation Loss:  0.03002021577493805
+Train Loss:  0.028539085315297478
+Validation Loss:  0.03175735967751178
+Train Loss:  0.026038064337942913
+Validation Loss:  0.029419062885507528
+Train Loss:  0.023585317447187677
+Validation Loss:  0.029848336009308696
+Train Loss:  0.02236945877202611
+Validation Loss:  0.030201901888681784
+Train Loss:  0.020840746445068413
+Validation Loss:  0.030205281186176255
+Train Loss:  0.01976773778543524
+Validation Loss:  0.030708797415071685
+Early Stopp !!!
+Training finished.
+The precision of the model is: 0.790
+The recall of the model is: 0.565
+The f1 of the model is: 0.659
+The accuracy of the model is: 0.906
+Matthews Correlation Coefficient of the model is: 0.014
+Start:  2
+[376, 125, 134, 369, 479, 1757, 305, 140, 4, 10, 540, 33, 118, 14, 50, 28, 313, 522, 49, 202, 2082, 552, 240, 2705, 425, 63]
+Loaded 2730 training samples.
+1e-05
+32
+100
+32_alphas
+Train Loss:  0.5142592611736145
+Validation Loss:  0.3764599253320032
+Train Loss:  0.4036675042648246
+Validation Loss:  0.36985870285166633
+Train Loss:  0.39584759719993756
+Validation Loss:  0.36467816763454014
+Train Loss:  0.38466158055740857
+Validation Loss:  0.35993368675311405
+Train Loss:  0.37335336273131164
+Validation Loss:  0.3621170870545838
+Train Loss:  0.35867240981779236
+Validation Loss:  0.3560581148291628
+Train Loss:  0.33647705808929773
+Validation Loss:  0.35640311396370333
+Train Loss:  0.31308749307324923
+Validation Loss:  0.35378891933295464
+Train Loss:  0.28763308403068694
+Validation Loss:  0.3589671930919091
+Train Loss:  0.26629949717418006
+Validation Loss:  0.35775260420309174
+Train Loss:  0.24293358991111536
+Validation Loss:  0.36163287340766853
+Train Loss:  0.2178705012884693
+Validation Loss:  0.3707511905166838
+Early Stopp !!!
+Training finished.
+The precision of the model is: 0.779
+The recall of the model is: 0.595
+The f1 of the model is: 0.674
+The accuracy of the model is: 0.907
+Matthews Correlation Coefficient of the model is: 0.077
+Start:  3
+[376, 125, 134, 369, 479, 1757, 305, 140, 4, 10, 540, 33, 118, 14, 50, 28, 313, 522, 49, 202, 2082, 552, 240, 2705, 425, 63]
+Loaded 2730 training samples.
+1e-05
+32
+100
+32_alphas
+Train Loss:  1.21360600642536
+Validation Loss:  0.9481909123973714
+Train Loss:  0.9990724342456763
+Validation Loss:  0.9289602130237553
+Train Loss:  0.9823192047036212
+Validation Loss:  0.9202540175368389
+Train Loss:  0.9591107757195182
+Validation Loss:  0.9042866850892702
+Train Loss:  0.9325382983770923
+Validation Loss:  0.9009598659144508
+Train Loss:  0.899821943131046
+Validation Loss:  0.8894561953428719
+Train Loss:  0.8563720339882201
+Validation Loss:  0.8768049395746655
+Train Loss:  0.8064057438269906
+Validation Loss:  0.8745619915425777
+Train Loss:  0.7599935633116874
+Validation Loss:  0.8812344860699441
+Train Loss:  0.7247102860955225
+Validation Loss:  0.8960757955080934
+Train Loss:  0.654225948928059
+Validation Loss:  0.8924870433078872
+Train Loss:  0.5943394875612812
+Validation Loss:  0.895926718496614
+Early Stopp !!!
+Training finished.
+The precision of the model is: 0.792
+The recall of the model is: 0.583
+The f1 of the model is: 0.672
+The accuracy of the model is: 0.908
+Matthews Correlation Coefficient of the model is: 0.103
+Start:  4
+[376, 125, 134, 369, 479, 1757, 305, 140, 4, 10, 540, 33, 118, 14, 50, 28, 313, 522, 49, 202, 2082, 552, 240, 2705, 425, 63]
+Loaded 2730 training samples.
+1e-05
+32
+100
+32_alphas
+Train Loss:  1.9007296631301658
+Validation Loss:  1.517170052561495
+Train Loss:  1.5899393200010494
+Validation Loss:  1.4782327976491716
+Train Loss:  1.551679508841556
+Validation Loss:  1.4554291400644515
+Train Loss:  1.5084193867185842
+Validation Loss:  1.4410258506735165
+Train Loss:  1.4581350532994755
+Validation Loss:  1.431493950386842
+Train Loss:  1.3977607596611632
+Validation Loss:  1.4270472808016672
+Train Loss:  1.3227844562219537
+Validation Loss:  1.399257653289371
+Train Loss:  1.234965299350628
+Validation Loss:  1.38818399525351
+Train Loss:  1.1492871192918308
+Validation Loss:  1.4052437941233318
+Train Loss:  1.0685728244159534
+Validation Loss:  1.4309495960672696
+Train Loss:  0.9708993698375813
+Validation Loss:  1.4304951926072438
+Train Loss:  0.8735452488712643
+Validation Loss:  1.462831996795204
+Early Stopp !!!
+Training finished.
+The precision of the model is: 0.817
+The recall of the model is: 0.575
+The f1 of the model is: 0.675
+The accuracy of the model is: 0.910
+Matthews Correlation Coefficient of the model is: 0.126
+Start:  5
+[376, 125, 134, 369, 479, 1757, 305, 140, 4, 10, 540, 33, 118, 14, 50, 28, 313, 522, 49, 202, 2082, 552, 240, 2705, 425, 63]
+Loaded 2730 training samples.
+1e-05
+32
+100
+32_alphas
+Train Loss:  2.505132650119671
+Validation Loss:  2.022283818986681
+Train Loss:  2.132655742375747
+Validation Loss:  2.0080534236298666
+Train Loss:  2.104253029477769
+Validation Loss:  2.0033276544676886
+Train Loss:  2.0746145688969158
+Validation Loss:  1.961462002661493
+Train Loss:  2.045911495236383
+Validation Loss:  1.949703932636314
+Train Loss:  2.0165178378423056
+Validation Loss:  1.9460444003343582
+Train Loss:  1.9761041342348293
+Validation Loss:  1.930154326475329
+Train Loss:  1.9222310625988503
+Validation Loss:  1.9049955556790035
+Train Loss:  1.862450273140617
+Validation Loss:  1.9107340516315565
+Train Loss:  1.803053105223006
+Validation Loss:  1.8950736323992412
+Train Loss:  1.723180970420008
+Validation Loss:  1.893598058157497
+Train Loss:  1.6434448370035144
+Validation Loss:  1.8954057846632268
+Train Loss:  1.5459708886733954
+Validation Loss:  1.9166310094296932
+Train Loss:  1.4621714029623114
+Validation Loss:  1.9030999971760645
+Train Loss:  1.3565716242444688
+Validation Loss:  1.923094007290072
+Early Stopp !!!
+Training finished.
+The precision of the model is: 0.857
+The recall of the model is: 0.531
+The f1 of the model is: 0.656
+The accuracy of the model is: 0.910
+Matthews Correlation Coefficient of the model is: 0.099
+
+Starting PG
+
+============ Job Information ===================================================
+Submitted: 2025-09-09T04:17:51
+Started: 2025-09-09T04:17:52
+Ended: 2025-09-09T05:01:34
+Elapsed: 44 min, Limit: 120 min, Difference: 76 min
+CPUs: 8, Nodes: 1
+Estimated Consumption: 110.00 core-hours
+================================================================================

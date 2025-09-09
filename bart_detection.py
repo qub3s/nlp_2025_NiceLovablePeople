@@ -12,37 +12,29 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, BartModel
 from sklearn.metrics import matthews_corrcoef
 from optimizer import AdamW
+import torch.nn.functional as F
 
 TQDM_DISABLE = False
 
-batch_size = 64
-lr = 1e-5
+batch_size = 32
+lr = 5e-05
 epochs = 100 
 
 class Focal_Loss(nn.Module):
     def __init__(self, alphas, gamma):
         super(Focal_Loss, self).__init__()
-
-        self.alphas = alphas
+        self.alphas = torch.tensor(alphas)
         self.gamma = gamma
-
+        
     def forward(self, input, target):
-        fl_sum = 0
+        bce_loss = F.binary_cross_entropy(input, target, reduction='none')
 
-        for i in range(input.shape[0]):
-            fl = 0
-            for j in range(input.shape[1]):
+        pt = torch.where(target == 1, input, 1 - input)
 
-                if target[i][j] == 1:
-                    tar = input[i][j]
-                else:
-                    tar = 1 - input[i][j]
+        focal_weight = self.alphas * (1 - pt) ** self.gamma
+        loss = focal_weight * bce_loss
 
-                fl += -self.alphas[j] * (1 - tar)**self.gamma * torch.log(tar)
-
-            fl_sum += fl
-
-        return fl_sum
+        return torch.sum(loss)
 
 class Weight_based_sampler(torch.utils.data.Sampler):
     def __init__(self, data, distribution, seed=42):
@@ -64,7 +56,6 @@ class Weight_based_sampler(torch.utils.data.Sampler):
         s_prob = sum(prob)
 
         prob = [ x / s_prob for x in prob]
-        print(prob[:10])
 
         self.probability = prob
 
@@ -108,7 +99,7 @@ class BartWithClassifier(nn.Module):
 
         return probabilities
 
-def transform_data(dataset, max_length=512, shuffle=True, custom_sampler=None, class_distribution=None, ):
+def transform_data(dataset, max_length=512, shuffle=True, custom_sampler=None ):
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", add_prefix_space=True)
 
     # Tokenize the sentences
@@ -135,44 +126,12 @@ def transform_data(dataset, max_length=512, shuffle=True, custom_sampler=None, c
             oh = torch.any(oh, dim=0)
             one_hot.append(oh)
 
-        length_one_hot = len(one_hot)
-        replication = [0] * 26
-
-        if class_distribution is not None:
-            start_frequencies = class_distribution.copy()
-            m = max(class_distribution)
-            max_i = class_distribution.index(m)
-
-            value = 0.1
-            print("Min Value: ", value)
-            while min(class_distribution) <= value * m:
-                min_i = class_distribution.index(min(class_distribution))
-                idx = random.randint(0, len(class_distribution)-1)
-
-                if replication[min_i]/start_frequencies[min_i] > 40:
-                    class_distribution[min_i] += 1
-                else:
-                    old_idx = idx
-
-                    while one_hot[idx][min_i].item() == False:
-                        idx -= 1
-
-                        if idx == -1:
-                            idx += length_one_hot
-
-                    replication[min_i] += 1
-                    one_hot.append(one_hot[idx])
-                    inp_ids.append(inp_ids[idx])
-                    att_mask.append(att_mask[idx])
-
-                    class_distribution[min_i] += 1
-
         one_hot = torch.stack(one_hot)
         inp_ids = torch.stack(inp_ids)
         att_mask = torch.stack(att_mask)
         
         # create the Dataset and the Dataloader
-        ds = TensorDataset(inp_ids, att_mask, one_hot)
+        ds = TensorDataset(token["input_ids"], token["attention_mask"], one_hot)
         dl = DataLoader(ds, batch_size = batch_size, shuffle=shuffle)
 
         if custom_sampler is None:
@@ -191,25 +150,13 @@ def transform_data(dataset, max_length=512, shuffle=True, custom_sampler=None, c
 
     return dl 
 
-def train_model(model, train_data, dev_data, device, epochs=5, lr=lr, class_frequencies=[]):
-    """
-    Train the model. You can use any training loop you want. We recommend starting with
-    AdamW as your optimizer. You can take a look at the SST training loop for reference.
-    Think about your loss function and the number of epochs you want to train for.
-    You can also use the evaluate_model function to evaluate the
-    model on the dev set. Print the training loss, training accuracy, and dev accuracy at
-    the end of each epoch.
-
-    Return the trained model.
-    """
-    ### TODO
-    #raise NotImplementedError
-
+def train_model(model, train_data, dev_data, device, epochs=5, lr=lr, class_frequencies=[], gamma=0, name=""):
+    
     # create optimizer, loss_fn 
     optimizer = AdamW(model.parameters(), lr=lr)
     loss_fn = nn.BCELoss()
-    #loss_fn = Focal_Loss(class_frequencies, 2)
-    early_stopping = EarlyStopping("models/pd_model.pth", patience=5)
+    #loss_fn = Focal_Loss(torch.tensor(class_frequencies).to(device), gamma)
+    early_stopping = EarlyStopping("models/"+name+"_pd_model.pth", patience=5)
     model = model.to(device)
 
     for epoch in range(epochs):
@@ -292,15 +239,6 @@ def train_model(model, train_data, dev_data, device, epochs=5, lr=lr, class_freq
     return model
 
 def test_model(model, test_data, test_ids, device):
-    """
-    Test the model. Predict the paraphrase types for the given sentences and return the results in form of
-    a Pandas dataframe with the columns 'id' and 'Predicted_Paraphrase_Types'.
-    The 'Predicted_Paraphrase_Types' column should contain the binary array of your model predictions.
-    Return this dataframe.
-    """
-    ### TODO
-    #raise NotImplementedError
-
     model = model.to(device)
 
     # set the model to eval (not store gradients)
@@ -333,7 +271,7 @@ def test_model(model, test_data, test_ids, device):
 
     return df
 
-def evaluate_model(model, test_data, device):
+def evaluate_model(model, test_data, device, border):
     """
     This function measures the accuracy of our model's prediction on a given train/validation set
     We measure how many of the 26 paraphrase types the model has predicted correctly for each data point..
@@ -356,7 +294,7 @@ def evaluate_model(model, test_data, device):
             attention_mask = attention_mask.to(device)
 
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            predicted_labels = (outputs > 0.5).int()
+            predicted_labels = (outputs > border).int()
 
             predicted_labels = predicted_labels.to("cpu");
 
@@ -432,7 +370,6 @@ class EarlyStopping:
         torch.save(model.state_dict(), self.model_checkpoint_path)
         self.val_loss_min = val_loss
 
-
 def seed_everything(seed=11711):
     random.seed(seed)
     np.random.seed(seed)
@@ -442,7 +379,6 @@ def seed_everything(seed=11711):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=11711)
@@ -451,7 +387,7 @@ def get_args():
     return args
 
 
-def finetune_paraphrase_detection(args, iter_x):
+def finetune_paraphrase_detection(args, iter_x, name):
     model = BartWithClassifier()
     device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
     model.to(device)
@@ -463,7 +399,6 @@ def finetune_paraphrase_detection(args, iter_x):
     train_dataset_label = []
     train_data_class_distribution = [0] * 32 
 
-    train_ds, val_ds = sklearn.model_selection.train_test_split(train_dataset, test_size=0.25)
 
     for x in list(train_dataset["paraphrase_type_ids"].apply(eval)):
         train_dataset_label.append(set(x))
@@ -476,17 +411,13 @@ def finetune_paraphrase_detection(args, iter_x):
     train_data_class_distribution = [ train_data_class_distribution[x] for x in range(len(train_data_class_distribution)) if x not in [0, 12, 19, 20, 23, 27]]
     print(train_data_class_distribution)
 
-    inverse_relative_class_frequencies = [ 1 / (x + 1e-8)**(1/iter_x) for x in train_data_class_distribution]
+    inverse_relative_class_frequencies = [ 1 / (x + 1e-8)**(1/4) for x in train_data_class_distribution]
+    #inverse_relative_class_frequencies = [1] * 26 
 
-    rcf = [x / sum(inverse_relative_class_frequencies) for x in inverse_relative_class_frequencies]
+    train_ds, val_ds = sklearn.model_selection.train_test_split(train_dataset, test_size=0.20)
     
-    # TODO You might do a split of the train data into train/validation set here
-    # (or in the csv files directly)
-
     sampler = Weight_based_sampler(train_ds, inverse_relative_class_frequencies)
-    
     #train_data = transform_data(train_ds, custom_sampler=sampler)
-    #train_data = transform_data(train_ds, shuffle=True, class_distribution=train_data_class_distribution)
 
     train_data = transform_data(train_ds, shuffle=True)
     dev_data = transform_data(val_ds, shuffle = False)
@@ -497,15 +428,16 @@ def finetune_paraphrase_detection(args, iter_x):
     print(lr)
     print(batch_size)
     print(epochs)
+    print(name)
 
-    train_model(model, train_data, dev_data, device, epochs=epochs, class_frequencies=inverse_relative_class_frequencies)
+    train_model(model, train_data, dev_data, device, epochs=epochs, class_frequencies=inverse_relative_class_frequencies, gamma=3, name=name)
     model = model.to(torch.device("cpu"))
-    model.load_state_dict(torch.load("models/pd_model.pth", map_location=torch.device("cpu")))
+    model.load_state_dict(torch.load("models/"+name+"_pd_model.pth", map_location=torch.device("cpu")))
     model = model.to(device)
 
     print("Training finished.")
 
-    precision, recall, f1, accuracy, matthews_corr = evaluate_model(model, dev_data, device)
+    precision, recall, f1, accuracy, matthews_corr = evaluate_model(model, dev_data, device, x)
 
     print(f"The precision of the model is: {precision:.3f}")
     print(f"The recall of the model is: {recall:.3f}")
@@ -521,7 +453,11 @@ def finetune_paraphrase_detection(args, iter_x):
 
 if __name__ == "__main__":
     args = get_args()
-    #for x in (1, 2, 3, 4, 5):
-    #    print("START RUN ", x)
+
+    name = "optim_seed"
+    print(name)
+    x = 1
+    
+    print("Start: ", x)
     seed_everything(args.seed)
-    finetune_paraphrase_detection(args, 1)
+    finetune_paraphrase_detection(args, x, name)
