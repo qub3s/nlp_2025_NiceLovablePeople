@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 # Specify the directory path
-directory_path = "slurm_files/"
-directory_path = "pooling"
+directory_path = "versions/"
+#directory_path = "pooling"
 # Initialize dictionaries to store file contents
 file_contents = {}  # Stores the entire content of each file as a string
 file_lines = {}     # Stores the content of each file as a list of lines
@@ -118,7 +118,7 @@ output_dir = "Bilder"
 os.makedirs(output_dir, exist_ok=True)  # Ordner erstellen, falls er nicht existiert
 if directory_path == "pooling":
     plt.savefig(os.path.join(output_dir, "qqp_pooling_plot.png"), dpi=300)  # Speichere das Bild mit hoher Auflösung
-elif directory_path == "slurm_files/":
+elif directory_path == "versions/":
     plt.savefig(os.path.join(output_dir, "qqp_changes.png"), dpi=300)
 # Zeige den Plot an
 plt.show()
