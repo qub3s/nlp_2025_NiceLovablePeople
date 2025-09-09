@@ -48,10 +48,12 @@ Hamza Ahmed Siddiqui:
 
 Amon Pönitzsch:
 - paraphrase detection (QQP)
+- Pretrain SimCSE on NLI datasets (Support)
 
 Leonardo Christian da Camara Silva:
 - Semantic Textual Similarity (STS)
-- bonus: paraphrase type detection with bert (PTD-bert)
+- Pretrain SimCSE on NLI datasets (Lead)
+- bonus: Paraphrase type detection with bert (PTD-bert)
 
 Georg Eckardt: qub3s <br/>
 
