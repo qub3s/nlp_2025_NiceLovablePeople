@@ -4,11 +4,11 @@
 *.pyc
 *.zip
 *output*
-*.jsonl
 logdir
 models
 slurm_files
 runs.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -177,4 +177,3 @@ test_run_hamza.py
 notes.txt
 bert_georg.py
 .DS_Store
-data_extra

@@ -26,11 +26,6 @@ from optimizer import AdamW
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 
-from sentiwordnet_processor import SentiWordNetProcessor, SentiWordNetProcessor_NegHandling, VADERProcessor
-import datetime
-
-from torch.optim.lr_scheduler import LambdaLR
-
 TQDM_DISABLE = False
 
 
@@ -49,10 +44,6 @@ BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
 
-swn_processor = SentiWordNetProcessor_NegHandling()
-vader_processor = VADERProcessor()
-
-
 class MultitaskBERT(nn.Module):
     """
     This module should use BERT for these tasks:
@@ -64,48 +55,10 @@ class MultitaskBERT(nn.Module):
 
     def __init__(self, config):
         super(MultitaskBERT, self).__init__()
+        self.bert = BertModel.from_pretrained(
+            "bert-base-uncased", local_files_only=config.local_files_only
+        )
 
-        self.config = config
-
-        # Load pre-tuned SimCSE model or base BERT
-        if config.use_pretrained_simcse:
-            print(f"Loading pretrained SimCSE model from: {config.simcse_model_path}")
-            
-            state_dict = torch.load(config.simcse_model_path, map_location='cpu')
-            
-            # Show model structure
-            print(f"Model contains {len(state_dict)} parameters")
-            bert_keys = [k for k in state_dict.keys() if k.startswith('bert.')]
-            print(f"Found {len(bert_keys)} BERT parameters")
-            
-            # Initialize with base BERT
-            self.bert = BertModel.from_pretrained(
-                "bert-base-uncased",
-                local_files_only=config.local_files_only
-            )
-            
-            # Extract BERT weights
-            bert_state_dict = {}
-            for key, value in state_dict.items():
-                if key.startswith('bert.'):
-                    new_key = key[5:]  # Remove 'bert.' prefix
-                    bert_state_dict[new_key] = value
-            
-            # Load the BERT weights
-            if bert_state_dict:
-                missing_keys, unexpected_keys = self.bert.load_state_dict(bert_state_dict, strict=False)
-                print(f"Successfully loaded BERT weights")
-                print(f"Missing keys: {len(missing_keys)}")
-                print(f"Unexpected keys: {len(unexpected_keys)}")
-            else:
-                print("Warning")
-                
-        else:
-            self.bert = BertModel.from_pretrained(
-                "bert-base-uncased",
-                local_files_only=config.local_files_only
-            )
-        
         # Freeze BERT parameters in pretrain mode
         for param in self.bert.parameters():
             if config.option == "pretrain":
@@ -118,52 +71,52 @@ class MultitaskBERT(nn.Module):
         # HS: Adding a linear layer for sentiment prediction. Will put this at end of last BERT block.
         # The final BERT embedding is the hidden state of [CLS] token which I will get 
         # as dict['pooler_output'] from output of BertModel.forward().
-        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE + 5 + 3, N_SENTIMENT_CLASSES) # [768+5+3] -> 5 # HS: 8 extra features from SWN and VADER
+        self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES) # 768 -> 5
         self.sentiment_dropout = nn.Dropout(config.hidden_dropout_prob)
 
-        self.swn_gate = nn.Sequential( # Gate to combine BERT and SWN features with dynamic weights
-            nn.Linear(768 + 5 + 3, 256),  # h_cls + SWN features + VADER features
-            nn.ReLU(),
-            nn.Linear(256, 3),   
-            nn.Sigmoid())   # BERT_weight and SWN_weight and VADER_weight
-
         # STS Regression Head
-        if config.regressor_type == "simple":
-            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
-            self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
+        self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.sts_regressor = nn.Linear(BERT_HIDDEN_SIZE * 3, 1)
 
-        elif config.regressor_type == "complex":
-            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
-            self.sts_regressor = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE * 3, 512), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob), nn.Linear(512, 256), nn.ReLU(), nn.Dropout(config.hidden_dropout_prob),nn.Linear(256, 1))
-
-        elif config.regressor_type == "sbert":
-            self.sts_dropout = nn.Dropout(config.hidden_dropout_prob)
-
-        
         # QQP
-        if hasattr(args, 'task') and args.task == "qqp":
-            self.paraphrase_classifier = nn.Sequential(
-                nn.Linear(BERT_HIDDEN_SIZE, 768),
-                nn.GELU(),
-                nn.Dropout(config.hidden_dropout_prob),
-                nn.Linear(768, 1)
-            )
-            self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
-            # Initialisierung
-            nn.init.xavier_uniform_(self.paraphrase_classifier[0].weight)
-            nn.init.constant_(self.paraphrase_classifier[0].bias, 0.0)
-            nn.init.xavier_uniform_(self.paraphrase_classifier[3].weight)
-            nn.init.constant_(self.paraphrase_classifier[3].bias, 0.0)
-        else:
-            # Einfacher Classifier für andere Tasks
-            self.paraphrase_classifier = nn.Linear(BERT_HIDDEN_SIZE, 1)
-            self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob)
-        
+        # Enhanced QQP classifier
+        self.paraphrase_dropout = nn.Dropout(config.hidden_dropout_prob * 2)  # More dropout
+
+        # Enhanced classifier with multiple layers
+        self.paraphrase_classifier = nn.Sequential(
+            nn.Linear(768 * 6, 1536),       # 4608 -> 1536
+            nn.GELU(),                       # Better than ReLU
+            nn.Dropout(config.hidden_dropout_prob),
+            nn.LayerNorm(1536),
+            nn.Linear(1536, 384),            # 1536 -> 384
+            nn.GELU(),
+            nn.Dropout(config.hidden_dropout_prob), 
+            nn.Linear(384, 1)                # 384 -> 1
+        )
+
+        # Initialize weights properly
+        for layer in self.paraphrase_classifier:
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_uniform_(layer.weight, gain=nn.init.calculate_gain('gelu'))
+                nn.init.constant_(layer.bias, 0.0)
 
         # Paraphrase type detection
         self.paraphrase_type_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.paraphrase_type_classifier = nn.Sequential(nn.Linear(BERT_HIDDEN_SIZE, 26))
         
+           
+
+    def forward(self, input_ids, attention_mask):
+        """Takes a batch of sentences and produces embeddings for them."""
+
+        # The final BERT embedding is the hidden state of [CLS] token (the first token).
+        # See BertModel.forward() for more details.
+        # Here, you can start by just returning the embeddings straight from BERT.
+        # When thinking of improvements, you can later try modifying this
+        # (e.g., by adding other layers).
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        return outputs["pooler_output"] 
+    
     def forward_etpc(self, input_ids, attention_mask):
         """Use last hidden state for the etpc datase."""
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
@@ -171,151 +124,26 @@ class MultitaskBERT(nn.Module):
         cls_embedding = last_hidden_state[:, 0]
         return cls_embedding
     
-    # ========== POOLING FUNCTIONS ============       
-  
-    def hierarchical_pooling(self, model_output, attention_mask):
+    def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         """
-        Combines CLS token representation with mean pooling for richer representation.
-        model_output: last_hidden_state from BERT
-        attention_mask: attention mask for the input
-        Returns: pooled sentence embedding of size [batch_size, hidden_size * 2]
+        Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
+        Since the similarity label is a number in the interval [0,5], your output should be normalized to the interval [0,5];
+        it will be handled as a logit by the appropriate loss function.
+        Dataset: STS
         """
-        token_embeddings = model_output["last_hidden_state"]
-        
-        # CLS token representation
-        cls_embedding = token_embeddings[:, 0, :]
-        
-        # Mean pooling of all tokens
-        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-        mean_embedding = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-        
-        # Concatenate both representations
-        combined_embedding = torch.cat([cls_embedding, mean_embedding], dim=1)
-        
-        # Optional: add a projection layer if dimensionality is too high
-        if hasattr(self, 'projection'):
-            combined_embedding = self.projection(combined_embedding)
-        
-        return combined_embedding        
-            
-    def weighted_mean_pooling(self, model_output, attention_mask):
-        """
-        Performs weighted mean pooling using self-attention weights.
-        Gives more importance to semantically richer tokens.
-        model_output: contains last_hidden_state and attention weights
-        attention_mask: attention mask for the input
-        Returns: pooled sentence embedding of size [batch_size, hidden_size]
-        """
-        token_embeddings = model_output["last_hidden_state"]
-        
-        # Dynamically create attention weights if they don't exist
-        if not hasattr(self, 'attention_weights'):
-            hidden_size = token_embeddings.size(-1)
-            # Register as buffer so it gets moved to the correct device
-            self.register_parameter(
-                'attention_weights', 
-                nn.Parameter(torch.randn(hidden_size, 1).to(token_embeddings.device))
-            )
-            nn.init.xavier_uniform_(self.attention_weights)
-        
-        # Calculate attention scores
-        weights = torch.matmul(token_embeddings, self.attention_weights)  # [batch, seq, 1]
-        weights = weights.squeeze(-1)  # [batch, seq]
-        
-        # Apply mask and softmax
-        weights = weights.masked_fill(attention_mask == 0, -1e9)
-        attention_weights = torch.softmax(weights, dim=-1)  # [batch, seq]
-        
-        # Weighted sum
-        weighted_emb = torch.sum(token_embeddings * attention_weights.unsqueeze(-1), dim=1)
-        return weighted_emb  
-                
-    def max_pooling(self, model_output, attention_mask):
-        """
-        Performs max pooling on the token embeddings, taking into account the attention mask.
-        Captures the most salient features from each dimension.
-        model_output: last_hidden_state from BERT
-        attention_mask: attention mask for the input
-        Returns: pooled sentence embedding of size [batch_size, hidden_size]
-        """
-        token_embeddings = model_output["last_hidden_state"]
-        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).bool()
-        
-        # Set padding tokens to a very small value so they don't affect max
-        masked_embeddings = token_embeddings.clone()
-        masked_embeddings[~input_mask_expanded] = -float('inf')
-        
-        max_embeddings, _ = torch.max(masked_embeddings, dim=1)
-        return max_embeddings            
-            
-    def mean_pooling(self, model_output, attention_mask):
-        """
-        Performs mean pooling on the token embeddings, taking into account the attention mask.
-        model_output: last_hidden_state from BERT
-        attention_mask: attention mask for the input
-        Returns: pooled sentence embedding of size [batch_size, hidden_size]
-        """
-        token_embeddings = model_output["last_hidden_state"]
-        input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-        sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
-        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-        return sum_embeddings / sum_mask
+        # Embeddings for both sentences
+        emb1 = self.forward(input_ids_1, attention_mask_1)
+        emb2 = self.forward(input_ids_2, attention_mask_2)
 
-
-
-
-    def forward(self, input_ids, attention_mask):
-        """Takes a batch of sentences and produces embeddings for them."""
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-
-        if self.config.forward_type == "pooler":
-            
-            if args.task == "qqp":
-                pooling  = "mean" # works best for QQP
-                if pooling == "max":
-                    embeddings = self.max_pooling(outputs, attention_mask)
-                elif pooling == "mean":
-                    embeddings = self.mean_pooling(outputs, attention_mask)
-                elif pooling == "weighted":
-                    embeddings = self.weighted_mean_pooling(outputs, attention_mask)
-                elif pooling == "hierarchical":
-                    embeddings = self.hierarchical_pooling(outputs, attention_mask) 
-                    # change forward function -> self.paraphrase_classifier = nn.Linear(config.hidden_size * 2, 1)
-                    # layer size has to be changed
-                embeddings = nn.functional.layer_norm(embeddings, normalized_shape=embeddings.size()[1:])
-                return embeddings            
-            
-            return outputs["pooler_output"] 
+        features = torch.cat([emb1, emb2, torch.abs(emb1 - emb2)], dim=1)
         
-        elif self.config.forward_type == "raw_cls":
-            if isinstance(outputs, dict):
-                return outputs["last_hidden_state"][:, 0, :]
-            else:
-                return outputs.last_hidden_state[:, 0, :]
+        features = self.sts_dropout(features)
+        logits = self.sts_regressor(features).squeeze()
         
-        elif self.config.forward_type == "sbert_mean":
-            token_embeddings = outputs["last_hidden_state"]
-            input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-            sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
-            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-            return sum_embeddings / sum_mask
+        # Return raw logits for MSE
+        return logits
         
-        elif self.config.forward_type == "simcse_sbert":
-            token_embeddings = outputs["last_hidden_state"]
-            input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-            sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
-            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
-            forward_sbert = sum_embeddings / sum_mask
-
-            if isinstance(outputs, dict):
-                forward_simcse = outputs["last_hidden_state"][:, 0, :]
-            else:
-                forward_simcse = outputs.last_hidden_state[:, 0, :]
-
-            return forward_sbert, forward_simcse
-        
-    
-    def predict_sentiment(self, input_ids, attention_mask, sentences):
+    def predict_sentiment(self, input_ids, attention_mask):
         """
         Given a batch of sentences, outputs logits for classifying sentiment.
         There are 5 sentiment classes:
@@ -324,136 +152,12 @@ class MultitaskBERT(nn.Module):
         Dataset: SST
         """
         ### TODO
-        # HS (Part 1): Get the sequence output from bert's forward pass and then pass it through the to bring it from 768->5 dimensions.
+        # HS: Get the sequence output from bert's forward pass and then pass it through the to bring it from 768->5 dimensions.
         # The logits will be the output of the sentiment classifier.
-        # sequence_output = self.forward(input_ids, attention_mask)
-        # logits = self.sentiment_classifier(sequence_output) ## Final logits for 5 classes
-        # return logits
-
-        # HS (Part 2): 
-        # 1. Get BERT output like before
-        # 2. Calculate swn features/scores for each sentence in a for loop
-        # 3. Concatenate BERT output with SentiWordNet features that are made
-        # 3.1 pass the combined features through a gating system to get weights for BERT and SWN features
-        # 3.2 Weight BERT and SWN features with the weights from the gating system
-        # 4. Pass the combined features through the sentiment classifier to get "new and enriched" logits
-        h_cls = self.forward(input_ids, attention_mask)
-    
-        swn_features = []
-        vader_features = []
-        for sentence in sentences:
-            avg_pos_score, avg_neg_score, avg_obj_score = swn_processor.get_scores(sentence)
-            # Engineer more expressive features from positive and negative scores
-            sentiment_strength = avg_pos_score + avg_neg_score  # How strong the sentiment is
-            sentiment_ratio = avg_pos_score / (avg_neg_score + 1e-8) if avg_neg_score > 0 else 10  # Pos/Neg ratio
-            net_sentiment = avg_pos_score - avg_neg_score  # Net sentiment score
-            
-            swn_features.append([avg_pos_score, avg_neg_score, sentiment_strength, sentiment_ratio, net_sentiment])
-
-            vader_pos, vader_neg, vader_neutral, vader_compound = vader_processor.get_scores(sentence)
-            vader_features.append([vader_pos, vader_neg, vader_compound])
-
-        swn_tensor = torch.tensor(swn_features, dtype=torch.float32, device=h_cls.device)
-        vader_tensor = torch.tensor(vader_features, dtype=torch.float32, device=h_cls.device)
-
-        # Gating system implementation ********************
-        gate_input = torch.cat([h_cls, swn_tensor, vader_tensor], dim=1)
-        
-        gate_weights = self.swn_gate(gate_input)
-        
-        bert_weight, swn_weight, vader_weight = gate_weights[:, 0].unsqueeze(1), gate_weights[:, 1].unsqueeze(1),  gate_weights[:, 2].unsqueeze(1)     # swn_weight, bert_weight = gate_weights[:, 0:1], gate_weights[:, 1:2]
-        
-        bert_enriched = h_cls * bert_weight
-        swn_enriched = swn_tensor * swn_weight
-        vader_enriched = vader_tensor * vader_weight
-        # *************************************************
-        combined_features = torch.cat([bert_enriched, swn_enriched, vader_enriched], dim=1)
-        
-        combined_features = self.sentiment_dropout(combined_features) # HS: dropout before final layer
-        logits = self.sentiment_classifier(combined_features) ## Final logits for 5 classes
+        sequence_output = self.forward(input_ids, attention_mask)
+        logits = self.sentiment_classifier(sequence_output)
         return logits
-        
-    def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
-        """
-        Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
-        Since the similarity label is a number in the interval [0,5], your output should be normalized to the interval [0,5];
-        it will be handled as a logit by the appropriate loss function.
-        Dataset: STS
-        """
-
-        if self.config.sts_training_type == "standard":
-            # Embeddings for both sentences
-            emb1 = self.forward(input_ids_1, attention_mask_1)
-            emb2 = self.forward(input_ids_2, attention_mask_2)
-
-            features = torch.cat([emb1, emb2, torch.abs(emb1 - emb2)], dim=1)
-            
-            features = self.sts_dropout(features)
-            logits = self.sts_regressor(features).squeeze()
-            
-            # Return raw logits for MSE
-            return logits
-
-        elif self.config.sts_training_type == "sbert" or self.config.sts_training_type == "simcse":
-            # Embeddings for both sentences
-            emb1 = self.forward(input_ids_1, attention_mask_1)
-            emb2 = self.forward(input_ids_2, attention_mask_2)
-            emb1 = F.normalize(emb1, p=2, dim=1)
-            emb2 = F.normalize(emb2, p=2, dim=1)
-            
-            # Cosine similarity
-            cosine_sim = torch.sum(emb1 * emb2, dim=1)
-            
-            return cosine_sim * 2.5 + 2.5  # Scale to [0, 5]
-        
-        elif self.config.sts_training_type == "simcse_sbert":
-            if self.training:
-                # Return both during training
-                sbert_pred, simcse_pred = self._get_both_predictions(input_ids_1, attention_mask_1, input_ids_2, attention_mask_2)
-                return sbert_pred, simcse_pred
-            else:
-                # During evaluation use only SBERT
-                emb1, _ = self.forward(input_ids_1, attention_mask_1)
-                emb2, _ = self.forward(input_ids_2, attention_mask_2)
-                emb1 = F.normalize(emb1, p=2, dim=1)
-                emb2 = F.normalize(emb2, p=2, dim=1)
-                cosine_sim = torch.sum(emb1 * emb2, dim=1)
-                return cosine_sim * 2.5 + 2.5
-    
-    def _get_both_predictions(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
-        """
-        Internal method that returns both predictions for simcse_sbert training
-        """
-        # Use the special forward mode for training
-        emb1_sbert, emb1_simcse = self.forward(input_ids_1, attention_mask_1)
-        emb2_sbert, emb2_simcse = self.forward(input_ids_2, attention_mask_2)
-        
-        # Calculate both predictions
-        emb1_sbert = F.normalize(emb1_sbert, p=2, dim=1)
-        emb2_sbert = F.normalize(emb2_sbert, p=2, dim=1)
-        sbert_sim = torch.sum(emb1_sbert * emb2_sbert, dim=1)
-        sbert_pred = sbert_sim * 2.5 + 2.5
-        
-        emb1_simcse = F.normalize(emb1_simcse, p=2, dim=1)
-        emb2_simcse = F.normalize(emb2_simcse, p=2, dim=1)
-        simcse_sim = torch.sum(emb1_simcse * emb2_simcse, dim=1)
-        simcse_pred = simcse_sim * 2.5 + 2.5
-        
-        return sbert_pred, simcse_pred
-            
-    
-    def get_simcse_embeddings(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
-        """
-        Get SimCSE embeddings for contrastive loss training
-        Returns embeddings for both augmented versions of each sentence
-        """
-        # Get two different embeddings for each sentence (via dropout)
-        emb1_a = self.forward(input_ids_1, attention_mask_1)
-        emb1_b = self.forward(input_ids_1, attention_mask_1)  # Different due to dropout
-        emb2_a = self.forward(input_ids_2, attention_mask_2)
-        emb2_b = self.forward(input_ids_2, attention_mask_2)  # Different due to dropout
-        
-        return emb1_a, emb1_b, emb2_a, emb2_b
+        # raise NotImplementedError
 
     def predict_paraphrase(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
@@ -464,12 +168,31 @@ class MultitaskBERT(nn.Module):
         during evaluation, and handled as a logit by the appropriate loss function.
         Dataset: Quora
         """
-
-        input_ids = torch.cat([input_ids_1, input_ids_2], dim=1)  
-        attention_mask = torch.cat([attention_mask_1, attention_mask_2], dim=1)
-        mean_embedding = self.forward(input_ids=input_ids,attention_mask=attention_mask)  
-        return self.paraphrase_classifier(mean_embedding).squeeze(-1)
-    
+        # Get embeddings for both sentences separately (Siamese approach)
+        u = self.forward(input_ids_1, attention_mask_1)  # [batch_size, hidden_size]
+        v = self.forward(input_ids_2, attention_mask_2)  # [batch_size, hidden_size]
+        
+        # Apply aggressive dropout for better regularization
+        u = self.paraphrase_dropout(u)
+        v = self.paraphrase_dropout(v)
+        
+        # Advanced feature combination inspired by SBERT and InferSent
+        combined_features = torch.cat([
+            u,                           # Sentence 1 embedding
+            v,                           # Sentence 2 embedding  
+            torch.abs(u - v),            # Absolute difference (captures dissimilarity)
+            u * v,                       # Element-wise product (captures interactions)
+            (u + v) / 2.0,               # Average embedding (captures commonality)
+            torch.sqrt(u * v + 1e-6),    # Geometric mean (alternative similarity)
+        ], dim=-1)  # Total features: 768 * 6 = 4608
+        
+        # Layer normalization for stable training
+        combined_features = nn.functional.layer_norm(combined_features, combined_features.shape[1:])
+        
+        # Pass through enhanced classifier with non-linearities
+        logits = self.paraphrase_classifier(combined_features)
+        
+        return logits.squeeze(-1)
 
     def predict_paraphrase_types(
         self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2
@@ -486,19 +209,14 @@ class MultitaskBERT(nn.Module):
         attention_mask = torch.cat([attention_mask_1[:, :-1], attention_mask_2[:, 1:]], dim=1)
 
         # Pass the concatenated input through the model to get embeddings
-        cls_embedding = self.forward(input_ids, attention_mask)
+        cls_embedding = self.forward_etpc(input_ids, attention_mask)
         cls_embedding = self.paraphrase_type_dropout(cls_embedding)
         logits = self.paraphrase_type_classifier(cls_embedding)
         
         return logits
-
-def ensure_directory_exists(filepath):
-    directory = os.path.dirname(filepath)
-    if directory and not os.path.exists(directory):
-        os.makedirs(directory, exist_ok=True)
+    
 
 def save_model(model, optimizer, args, config, filepath):
-    ensure_directory_exists(filepath)
     save_info = {
         "model": model.state_dict(),
         "optim": optimizer.state_dict(),
@@ -512,42 +230,7 @@ def save_model(model, optimizer, args, config, filepath):
     torch.save(save_info, filepath)
     print(f"Saving the model to {filepath}.")
 
-####################### STS Fine-Tuning improvement ##########################
-def simcse_contrastive_loss(emb1, emb2, temperature=0.05):
-        """SimCSE contrastive loss"""
-        batch_size = emb1.size(0)
-        emb1 = F.normalize(emb1, dim=1)
-        emb2 = F.normalize(emb2, dim=1)
-        
-        # Negative similarities
-        neg_sim = torch.matmul(emb1, emb2.T) / temperature
-        
-        # Create labels: positive pairs are on the diagonal
-        labels = torch.arange(batch_size).to(emb1.device)
-        
-        # Cross entropy loss for both directions
-        loss1 = F.cross_entropy(neg_sim, labels)
-        loss2 = F.cross_entropy(neg_sim.T, labels)
-
-        return (loss1 + loss2) / 2
-        
-def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, last_epoch=-1):
-    """
-    Create a schedule with a learning rate that decreases linearly from the initial lr set in the optimizer to 0, after
-    a warmup period during which it increases linearly from 0 to the initial lr set in the optimizer.
-    """
-    def lr_lambda(current_step: int):
-        if current_step < num_warmup_steps:
-            return float(current_step) / float(max(1, num_warmup_steps))
-        return max(
-            0.0, float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
-        )
-
-    return LambdaLR(optimizer, lr_lambda, last_epoch)
-
-
-################################ BONUS TASK #####################################
-
+## BONUS TASK
 def evaluate_etpc_f1(model, dataloader, device):
     """
     Evaluates the model on the ETPC dataset and computes F1 scores
@@ -689,14 +372,6 @@ def train_multitask(args):
         # print("ETPC train label distribution (mean per class):", train_labels.mean(axis=0))
         # print("ETPC dev label distribution (mean per class):", dev_labels.mean(axis=0))
 
-    # Learn the number of steps for the scheduler
-    total_steps = 0
-    if (args.task == "sts" or args.task == "multitask"):
-        total_steps += len(sts_train_dataloader) * args.epochs
-    if (args.task == "etpc" or args.task == "multitask"):
-        total_steps += len(etpc_train_dataloader) * args.epochs
-
-    num_warmup_steps = int(total_steps * args.warmup_ratio)
 
     ## Initialize model
     config = {
@@ -705,13 +380,6 @@ def train_multitask(args):
         "data_dir": ".",
         "option": args.option,
         "local_files_only": args.local_files_only,
-        "regressor_type": args.regressor_type,
-        "forward_type": args.forward_type,
-        "sts_training_type": args.sts_training_type,
-        "use_pretrained_simcse": args.use_pretrained_simcse,
-        "simcse_model_path": args.simcse_model_path,
-        "max_batches": args.max_batches,
-        "file_path": args.filepath,
     }
     config = SimpleNamespace(**config)
 
@@ -736,21 +404,11 @@ def train_multitask(args):
             weight_decay=0.01,
             correct_bias=False,
         )
-    elif args.task == "sst":
-        lr = args.lr
-        optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.025) ## HS: L2 regularization added
     else:
         # Default optimizer
         lr = args.lr
         optimizer = AdamW(model.parameters(), lr=lr)
-    
-    #Learning rate scheduler
-    if args.task == "sts" or args.task == "etpc":
-        scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=num_warmup_steps,
-        num_training_steps=total_steps
-    )
+
 
     best_dev_acc = float("-inf")
 
@@ -768,15 +426,14 @@ def train_multitask(args):
                 desc=f"train-sst-{epoch+1:02}",
                 disable=TQDM_DISABLE,
             ):
-                b_ids, b_mask, b_labels, b_sentences = (
+                b_ids, b_mask, b_labels = (
                     batch["token_ids"].to(device),
                     batch["attention_mask"].to(device),
                     batch["labels"].to(device),
-                    batch["sents"]  # HS: Get original sentences for swm processor
                 )
 
                 optimizer.zero_grad()
-                logits = model.predict_sentiment(b_ids, b_mask, b_sentences) # HS 
+                logits = model.predict_sentiment(b_ids, b_mask)
                 loss = F.cross_entropy(logits, b_labels.view(-1))
 
                 if config.option == "finetune":
@@ -788,156 +445,29 @@ def train_multitask(args):
 
         # STS training
         if args.task == "sts" or args.task == "multitask":
-            
-            batch_idx = 0
-            # Standard
-            if config.sts_training_type == "standard":
-                for batch in tqdm(
-                    sts_train_dataloader,
-                    desc=f"train-sts-{epoch+1:02}",
-                    disable=TQDM_DISABLE,
-                ):
-                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                        batch["token_ids_1"].to(device),
-                        batch["attention_mask_1"].to(device),
-                        batch["token_ids_2"].to(device),
-                        batch["attention_mask_2"].to(device),
-                        batch["labels"].to(device).float(),
-                    )
+            for batch in tqdm(
+                sts_train_dataloader,
+                desc=f"train-sts-{epoch+1:02}",
+                disable=TQDM_DISABLE,
+            ):
+                b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
+                    batch["token_ids_1"].to(device),
+                    batch["attention_mask_1"].to(device),
+                    batch["token_ids_2"].to(device),
+                    batch["attention_mask_2"].to(device),
+                    batch["labels"].to(device).float(),
+                )
 
-                    optimizer.zero_grad()
-                    predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                    loss = F.mse_loss(predictions, b_labels.view(-1))
+                optimizer.zero_grad()
+                predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
+                loss = F.mse_loss(predictions, b_labels.view(-1))
 
-                    if config.option == "finetune":
-                        loss.backward()
-                        optimizer.step()
-                        scheduler.step()
+                if config.option == "finetune":
+                    loss.backward()
+                    optimizer.step()
 
-                    train_loss += loss.item()
-                    num_batches += 1
-
-                    if batch_idx >= config.max_batches and config.max_batches > 0:    
-                        break
-
-            # Sbert
-            elif config.sts_training_type == "sbert":
-                for batch in tqdm(
-                    sts_train_dataloader,
-                    desc=f"train-sts-{epoch+1:02}",
-                    disable=TQDM_DISABLE,
-                ):
-                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                        batch["token_ids_1"].to(device),
-                        batch["attention_mask_1"].to(device),
-                        batch["token_ids_2"].to(device),
-                        batch["attention_mask_2"].to(device),
-                        batch["labels"].to(device).float(),
-                    )
-
-                    optimizer.zero_grad()
-                    predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                    loss = F.mse_loss(predictions, b_labels.view(-1))
-
-                    if config.option == "finetune":
-                        loss.backward()
-                        optimizer.step()
-                        scheduler.step()
-
-                    train_loss += loss.item()
-                    num_batches += 1
-
-                    batch_idx += 1
-
-                    if batch_idx >= config.max_batches and config.max_batches > 0:    
-                        break
-            
-            # SimCSE
-            elif config.sts_training_type == "simcse":
-                for batch in tqdm(
-                    sts_train_dataloader,
-                    desc=f"train-sts-simcse-{epoch+1:02}",
-                    disable=TQDM_DISABLE,
-                ):
-                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                        batch["token_ids_1"].to(device),
-                        batch["attention_mask_1"].to(device),
-                        batch["token_ids_2"].to(device),
-                        batch["attention_mask_2"].to(device),
-                        batch["labels"].to(device).float(),
-                    )
-
-                    optimizer.zero_grad()
-
-                    # Call the method on your model instance
-                    emb1_a, emb1_b, emb2_a, emb2_b = model.get_simcse_embeddings(b_ids1, b_mask1, b_ids2, b_mask2)
-                    simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
-                    simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
-                    loss = simcse_loss1 + simcse_loss2
-                    
-                    if config.option == "finetune":
-                        loss.backward()
-                        optimizer.step()
-                        scheduler.step()
-
-                    train_loss += loss.item()
-                    num_batches += 1
-
-                    batch_idx += 1
-
-                    if batch_idx >= config.max_batches and config.max_batches > 0:    
-                        break
-            
-            # Combined SimCSE + SBERT
-            elif config.sts_training_type == "simcse_sbert":
-
-                for batch in tqdm(
-                    sts_train_dataloader,
-                    desc=f"train-sts-combined-{epoch+1:02}",
-                    disable=TQDM_DISABLE,
-                ):
-                    b_ids1, b_mask1, b_ids2, b_mask2, b_labels = (
-                        batch["token_ids_1"].to(device),
-                        batch["attention_mask_1"].to(device),
-                        batch["token_ids_2"].to(device),
-                        batch["attention_mask_2"].to(device),
-                        batch["labels"].to(device).float(),
-                    )
-
-                    optimizer.zero_grad()
-
-                    # Get predictions from model (returns tuple: sbert_pred, simcse_pred)
-                    predictions = model.predict_similarity(b_ids1, b_mask1, b_ids2, b_mask2)
-                    sbert_pred, simcse_pred = predictions
-
-                    # SBERT MSE loss
-                    sbert_loss = F.mse_loss(sbert_pred, b_labels.view(-1))
-
-                    # SimCSE loss
-                    _, emb1_a = model.forward(b_ids1, b_mask1)
-                    _, emb1_b = model.forward(b_ids1, b_mask1)
-                    _, emb2_a = model.forward(b_ids2, b_mask2)
-                    _, emb2_b = model.forward(b_ids2, b_mask2)
-
-                    simcse_loss1 = simcse_contrastive_loss(emb1_a, emb1_b)
-                    simcse_loss2 = simcse_contrastive_loss(emb2_a, emb2_b)
-                    simcse_loss = simcse_loss1 + simcse_loss2
-                    
-                    # Combined Loss
-                    loss = args.alpha * simcse_loss + (1 - args.alpha) * sbert_loss
-                    
-                    if config.option == "finetune":
-                        loss.backward()
-                        optimizer.step()
-                        scheduler.step()
-
-                    train_loss += loss.item()
-                    num_batches += 1
-
-                    batch_idx += 1
-
-                    if batch_idx >= config.max_batches and config.max_batches > 0:    
-                        break
+                train_loss += loss.item()
+                num_batches += 1
 
         # QQP training
         if args.task == "qqp" or args.task == "multitask":
@@ -993,10 +523,10 @@ def train_multitask(args):
                 if config.option == "finetune":
                     loss.backward()
                     optimizer.step()
-                    scheduler.step()
 
                 train_loss += loss.item()
                 num_batches += 1
+        
 
         train_loss = train_loss / num_batches
 
@@ -1034,7 +564,7 @@ def train_multitask(args):
             "sts": (sts_train_corr, sts_dev_corr),
             "qqp": (quora_train_acc, quora_dev_acc),
             "etpc": (etpc_train_acc, etpc_dev_acc),
-            "multitask": (0, 0),
+            "multitask": (0, 0),  # TODO
         }[args.task]
 
         print(
@@ -1045,10 +575,6 @@ def train_multitask(args):
             best_dev_acc = dev_acc
             save_model(model, optimizer, args, config, args.filepath)
 
-    if args.task == "sts":
-        return best_dev_acc
-    
-    
 def test_model(args):
     with torch.no_grad():
         device = torch.device("cuda") if args.use_gpu else torch.device("cpu")
@@ -1064,13 +590,6 @@ def test_model(args):
 
 def get_args():
     parser = argparse.ArgumentParser()
-
-    # Which model to load
-    parser.add_argument("--use_pretrained_simcse", action="store_true", 
-                        help="Use pre-trained SimCSE model instead of base BERT", default=False)
-    parser.add_argument("--simcse_model_path", type=str, default="models/simcse_supervised/best_model_epoch3_corr0.8216.pt",
-                       help="Path to your pre-trained SimCSE model")
-    
     # Training task
     parser.add_argument(
         "--task",
@@ -1092,67 +611,8 @@ def get_args():
     )
     parser.add_argument("--use_gpu", action="store_true")
 
-    # NEW: Regressor type agument
-    parser.add_argument(
-        "--regressor_type",
-        type=str,
-        help="Type of regressor to use: simple or complex",
-        choices=("simple", "complex", "sbert","qqp"),
-        default="simple",
-    )
-
-    # NEW: Add forward function type argument
-    parser.add_argument(
-        "--forward_type",
-        type=str,
-        help="Type of forward function: pooler or raw_cls",
-        choices=("pooler", "raw_cls", "sbert_mean", "simcse_sbert"),
-        default="pooler",
-    )
-
-    # NEW: Add STS training type argument
-    parser.add_argument(
-        "--sts_training_type",
-        type=str,
-        help="Type of STS training",
-        choices=("standard", "sbert", "simcse", "simcse_sbert"),
-        default="standard",
-    )
-    # NEW: Save only correlation values
-    parser.add_argument("--save_results_only", action="store_true",
-                       help="Save only results to text file instead of full model")
-
-    # NEW: Add alpha value
-    parser.add_argument("--alpha", type=float, default=0.5, help="Weight for SimCSE loss in combined training")
-
-    # NEW: Max Batches
-    parser.add_argument("--max_batches", type=float, default=0, help="Number of batches tro train on (for STS task only)")
-
-    # NEW: Add warmup ratio argument
-    parser.add_argument("--warmup_ratio", type=float, default=0.1, help="Percentage of total steps for warmup (0.1 = 10%)")
-
-    # Hyperparameters - MOVE THESE UP before the parse_known_args() call
-    parser.add_argument(
-        "--batch_size", help="sst: 64 can fit a 12GB GPU", type=int, default=64
-    )
-    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
-    parser.add_argument(
-        "--lr",
-        type=float,
-        help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
-        default=1e-5,  # Set a default, we'll update it later
-    )
-    parser.add_argument("--local_files_only", action="store_true")
-
-    # Parse known args to get the option for conditional defaults
     args, _ = parser.parse_known_args()
-    
-    # Update lr default based on option
-    if args.option == "pretrain":
-        parser.set_defaults(lr=1e-3)
-    else:
-        parser.set_defaults(lr=1e-5)
-
+    print(f"args: {args}")
     # Dataset paths
     parser.add_argument("--sst_train", type=str, default="data/sst-sentiment-train.csv")
     parser.add_argument("--sst_dev", type=str, default="data/sst-sentiment-dev.csv")
@@ -1268,70 +728,28 @@ def get_args():
         ),
     )
 
-    # Filepath argument - add this at the end
+    # Hyperparameters
     parser.add_argument(
-        "--filepath", 
-        type=str, 
-        default=None,  # Set to None initially
-        help="Path to save/load the model"
+        "--batch_size", help="sst: 64 can fit a 12GB GPU", type=int, default=64
     )
+    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
+    parser.add_argument(
+        "--lr",
+        type=float,
+        help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
+        default=1e-3 if args.option == "pretrain" else 1e-5,
+    )
+    parser.add_argument("--local_files_only", action="store_true")
 
-    # Parse all arguments
     args = parser.parse_args()
-    
-    # Set default filepath if not provided
-    if args.filepath is None:
-        args.filepath = f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"
-    
     return args
 
-def main():
-    seed_everything(args.seed)
-    
-    # Run training and get the final correlation for STS task
-    if args.task == "sts":
-        correlation = train_multitask(args)
-    else:
-        train_multitask(args)  # Train without return value
-    
-    # Save results instead of model
-    if hasattr(args, 'save_results_only') and args.save_results_only and args.task == "sts":
-        os.makedirs("sts_sweep_results_both", exist_ok=True)
-        filename_parts = [args.sts_training_type]
-        filename_parts.append(f"seed_{args.seed}")
-        
-        if hasattr(args, 'alpha') and args.alpha is not None:
-            filename_parts.append(f"alpha_{args.alpha}")
-        
-        if hasattr(args, 'max_batches') and args.max_batches is not None:
-            filename_parts.append(f"batch_{args.max_batches}")
-        
-        filename_parts.append(f"corr_{correlation:.4f}")
-        filename = "_".join(filename_parts) + ".txt"
-        filepath = os.path.join("sts_sweep_results_both", filename)
-        
-        with open(filepath, 'w') as f:
-            f.write(f"Task: {args.task}\n")
-            f.write(f"Training type: {args.sts_training_type}\n")
-            f.write(f"Seed: {args.seed}\n")
-            f.write(f"Epochs: {args.epochs}\n")
-            f.write(f"Learning rate: {args.lr}\n")
-            f.write(f"Batch size: {args.batch_size}\n")
-            
-            if hasattr(args, 'alpha') and args.alpha is not None:
-                f.write(f"Alpha: {args.alpha}\n")
-            
-            if hasattr(args, 'max_batches') and args.max_batches is not None:
-                f.write(f"Max batches: {args.max_batches}\n")
-            
-            f.write(f"Final correlation: {correlation:.4f}\n")
-            f.write(f"Timestamp: {datetime.datetime.now().isoformat()}\n")
-        
-        print(f"Saved results to {filepath}")
-        print(f"Final correlation: {correlation:.4f}")
-    else:
-        test_model(args)
 
 if __name__ == "__main__":
     args = get_args()
-    main()
+    args.filepath = (
+        f"models/{args.option}-{args.epochs}-{args.lr}-{args.task}.pt"  # save path
+    )
+    seed_everything(args.seed)  # fix the seed for reproducibility
+    train_multitask(args)
+    test_model(args)

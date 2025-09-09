@@ -48,7 +48,3 @@ job_id, changes, dev_acc, time, error
 10784296, Orginal Code sollte laufen,0.862,?,0
 10784297, OC 6 Epochen,0,0,0
 10784378, OC similiarity function anstatt parallel,0.795,16min,0
-
-# ======= REAL TESTING
-10784874, BASELINE python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=8
-
