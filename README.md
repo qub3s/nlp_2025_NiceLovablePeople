@@ -531,7 +531,9 @@ The following figure visualizes the performance of the different model variants 
 Comparison of Model Performance During Training. This graph displays the development accuracy (Dev Accuracy), training accuracy (Train Accuracy), and training loss (Train Loss) for various model configurations over 6 epochs. Each line represents one of the tested architectures. The use of different markers (e.g., circles for development accuracy, triangles for training accuracy) helps distinguish between the metrics. The red dashed line indicates the initial baseline accuracy of 0.870.
 
 ### Semantic Textual Similarity (STS) - Measuring text meaning similarity
+
 <h3>Introduction</h3>
+
 <details>
 The baseline of the model with minBert had a 0.371 dev correlation in Part-01.
 
@@ -541,7 +543,7 @@ The baseline of the model with minBert had a 0.371 dev correlation in Part-01.
 This chapter investigates methods for enhancing semantic textual similarity (STS) by leveraging the SimCSE framework for contrastive pre-training. In Figure 1 is a rough sketch displayed, of the implemented approach which begin with a BERT Base uncased model. Subsequently it is pre-trained using supervised SimCSE on NLI datasets. This pre-trained model serves as a foundation for subsequent fine-tuning on STS data using several methodologies: a standard SBERT architecture with MSE loss, a SimCSE model with contrastive loss, and a novel combined approach (SBS+SimCSE) that uses a weighted sum of both objective functions. The following sections detail the implementation and results of these experiments.
 
 Remark: For all plots 15 different seeds were used to compute 95% confidence intervalls.
-<details>
+</details>
 
 <h3>Pretrain the given Basemodel with SimCSE</h3>
 <details>
@@ -563,10 +565,11 @@ Automatic mixed precision training made calculations faster by using less memory
 An early stopping system with patience monitoring stops training when the performance on the development set stops getting better.
 
 **Results:**
-<details>
 Model performance is evaluated on the Semantic Textual Similarity (STS) benchmark using Spearman's rank correlation coefficient. This metric measures how well the cosine similarity between sentence embeddings aligns with human-annotated similarity scores.
 
 The supervised SimCSE model achieved a Spearman correlation of 0.8216, significantly outperforming the unsupervised variant, which reached 0.6824. These results demonstrate that it is an improvement to incorporate labeled natural language inference data into the training process.
+
+</details>
 
 <h3>SBert Finetuning</h3>
 <details>
@@ -589,7 +592,7 @@ A possible explanation is that the pretrained SimCSE model is already good at ge
 ![](STS_Plots_Pretrain/batch_vs_correlation_ci_log.png)
 *Figure 2: SBErt Performance using the pretrained SImCSE model as Base Bert model (Batchsize=32 with 5719 training sentence pairs)*
 
-<details>
+</details>
 
 <h3>SimCSE Finetuning</h3>
 <details>
@@ -609,7 +612,7 @@ If one compares the SBERT fine-tuning approach with the SimCSE fine-tuning appro
 
 ![](STS_Plots_Pretrain/simcs_batch_vs_correlation_ci.png)
 *Figure 3: SBert performance for different training data size (Batchsize=32 with 5719 training sentence pairs)*
-<details>
+</details>
 
 <h3>SBert + SimCSE Finetuning</h3>
 <details>
@@ -637,7 +640,7 @@ Notably, even at alpha = 1.0, the implementation of the SimCSE-only model outper
 
 In addition, experiments with varying training data sizes revealed a behavior similar to the SBERT case: performance peaked at 640 sentence pairs. Using more data for fine-tuning resulted in decreased correlation, suggesting that excessive task-specific fine-tuning can weaken the general, high-quality embeddings obtained from pre-training.
 
-<details>
+</details>
 
 <h3>Summary of Experiments and literature:</h3>
 </details>
@@ -684,7 +687,6 @@ Note: The final model reaches a peak dev accuracy of 0.848 when executed from th
   Bowman, S. R., Angeli, G., Potts, C., & Manning, C. D. (2015). A Large Annotated Corpus for Learning Natural Language Inference.
   
  </details>
-
 ### Paraphrase Type Detection (PTD) - Identifying paraphrase types and relationships
 
 ### Paraphrase Type Generation (PTG) - Generating diverse paraphrase types
