@@ -522,20 +522,19 @@ This graph displays the Dev accuracy for various model configurations over 6 epo
 
 ### Semantic Textual Similarity (STS) - Measuring text meaning similarity
 
-<h3>Introduction</h3>
+This chapter investigates methods for enhancing semantic textual similarity (STS) by leveraging the SimCSE framework for contrastive pre-training. In Figure 1 is a rough sketch displayed, of the implemented approach which begin with a BERT Base uncased model. Subsequently it is pre-trained using supervised SimCSE on NLI datasets. This pre-trained model serves as a foundation for subsequent fine-tuning on STS data using several methodologies: a standard SBERT architecture with MSE loss, a SimCSE model with contrastive loss, and a novel combined approach (SBS+SimCSE) that uses a weighted sum of both objective functions. The following sections detail the implementation and results of these experiments.
 
 <details>
+Remarks: For all plots 15 different seeds were used to compute 95% confidence intervalls. The baseline of the model with minBert had a 0.371 dev correlation in Part-01.
+</details>
 
 ![STS task Framework](STS_Plots_Pretrain/graphic.png)
 *Figure 1: Framework for STS improvements*
 
-This chapter investigates methods for enhancing semantic textual similarity (STS) by leveraging the SimCSE framework for contrastive pre-training. In Figure 1 is a rough sketch displayed, of the implemented approach which begin with a BERT Base uncased model. Subsequently it is pre-trained using supervised SimCSE on NLI datasets. This pre-trained model serves as a foundation for subsequent fine-tuning on STS data using several methodologies: a standard SBERT architecture with MSE loss, a SimCSE model with contrastive loss, and a novel combined approach (SBS+SimCSE) that uses a weighted sum of both objective functions. The following sections detail the implementation and results of these experiments.
-
-Remarks: For all plots 15 different seeds were used to compute 95% confidence intervalls. The baseline of the model with minBert had a 0.371 dev correlation in Part-01.
-</details>
 
 <h3>Pretrain the given Basemodel with SimCSE</h3>
 <details>
+
 
 **Explanation:** 
 
@@ -554,6 +553,7 @@ The contrastive loss function got a lot better thanks to margin separation metho
 
 Automatic mixed precision training made calculations faster by using less memory and keeping numbers stable through gradient scaling. Gradient accumulation methods let one use batch sizes that are bigger than what most GPUs can handle. This makes training more stable. To speed up convergence, the learning rate schedule uses linear scheduling and warmup periods. And at the end, an early stopping system with patience monitoring stops training when the performance on the development set stops getting better.
 
+
 **Results:**
 
 Model performance is evaluated on the Semantic Textual Similarity (STS) benchmark using Spearman's rank correlation coefficient. This metric measures how well the cosine similarity between sentence embeddings aligns with human-annotated similarity scores.
@@ -565,15 +565,18 @@ The supervised SimCSE model achieved a Spearman correlation of 0.8216, significa
 <h3>SBert Finetuning</h3>
 <details>
 
+
 **Explanation:**
 
 SBERT enhances the STS task by generating high-quality sentence embeddings that can be efficiently compared using cosine similarity. In comparement to standard BERT, which requires pairwise computations and is computationally expensive, SBERT uses a siamese network structure fine-tuned the given STS dataset. This allows it to produce semantically meaningful embeddings that significantly outperform traditional methods like averaging BERT outputs or using GloVe embeddings [4]. As a result, SBERT reduces inference time from hours to seconds while maintaining or improving accuracy on STS benchmarks.
+
 
 **Implementation:**
 
 This implementation realizes the SBERT architecture through a modular design centered on a shared BERT encoder with tied weights. The core of the system lies in its mean pooling strategy, which computes sentence embeddings by averaging the output token vectors while dynamically accounting for variable input lengths through mask-based normalization. The resulting embeddings are L2-normalized before similarity computation to ensure stable cosine similarity measurements within a unit sphere.
 
 The training regime uses a mean squared error objective function, directly optimizing the model to regress towards continuous similarity labels. The framework incorporates a training loop with gradient accumulation and optimizer scheduling, which allows for effective batch processing. A linear scaling operation transforms the normalized cosine similarity scores to the target evaluation range, aligning the model's output to the output [0,5].
+
 
 **Results:**
 
@@ -591,13 +594,16 @@ A possible explanation is that the pretrained SimCSE model is already good at ge
 <h3>SimCSE Finetuning</h3>
 <details>
 
+
 **Explanation:**
 
 This implementation adapts the SimCSE framework for supervised finetuning. It uses annotated sentence pairs to direct the contrastive learning process, in contrast to the unsupervised approach [1]. In order to create positive pairs, the model learns by comparing each sentence to itself after it has been run twice through the encoder using various dropout masks. It employs other sentence pairs in the batch as negatives at the same time. By combining human-rated similarity labels with contrastive representation learning, it improves the capacity and can generate sentence embeddings for the similarity task.
 
+
 **Implementation:**
 
 The system builds on the BERT-based encoder that has been fine-tuned using a custom contrastive objective or the Bert-based uncase. The SimCSE model produces two embeddings for each sentence in a pair within a batch by employing stochastic dropout, resulting in natural variations that act as positive examples. While a contrastive loss function promotes similarity between these augmented views of the same sentence, it diminishes similarity to all other sentences in the batch. During the training process, STS data is iterated over and weights are updated via backpropagation, with no explicit similarity scores used during contrastive updates.
+
 
 **Results:**
 
@@ -614,9 +620,11 @@ If one compares the SBERT fine-tuning approach with the SimCSE fine-tuning appro
 <h3>SBert + SimCSE Finetuning</h3>
 <details>
 
+
 **Explanation:**
 
 The approach combines the strengths of two powerful sentence embedding methods: SBert and SimCSE. As mentiond above: SBert is fine-tuned supervised, and so it may overfit to label noise and lose generalization. SimCSE, on the other hand, uses contrastive learning to pull semantically similar sentences closer in the embedding space while pushing dissimilar ones apart, improving robustness and representation quality. By optimizing both objectives together during fine-tuning, this could lead to a framework which offers SBert’s task-specific performance while preserving the generalization benefits of SimCSE.
+
 
 **Implementation:**
 
