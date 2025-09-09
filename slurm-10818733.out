@@ -1,0 +1,63 @@
+================================================================================
+JobID = 10818733
+User = u17479, Account = nhr_ni_dnlpss25_g04
+Partition = standard96, Nodelist = gcn2816
+================================================================================
+bash: cannot set terminal process group (-1): Inappropriate ioctl for device
+bash: no job control in this shell
+bash: check_conda_installed: command not found
+bash: check_conda_env: command not found
+Activating conda environment 'dnlp'...
+dnlp
+Channels:
+ - conda-forge
+ - nvidia
+ - pytorch
+Platform: linux-64
+Collecting package metadata (repodata.json): ...working... done
+Solving environment: ...working... done
+
+
+==> WARNING: A newer version of conda exists. <==
+    current version: 24.3.0
+    latest version: 25.7.0
+
+Please update conda by running
+
+    $ conda update -n base -c conda-forge conda
+
+
+
+# All requested packages already installed.
+
+[nltk_data] Downloading package punkt to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Package punkt is already up-to-date!
+[nltk_data] Downloading package punkt_tab to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Package punkt_tab is already up-to-date!
+[nltk_data] Downloading package averaged_perceptron_tagger_eng to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Package averaged_perceptron_tagger_eng is already up-to-
+[nltk_data]       date!
+[nltk_data] Downloading package averaged_perceptron_tagger to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Package averaged_perceptron_tagger is already up-to-
+[nltk_data]       date!
+[nltk_data] Downloading package wordnet to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Package wordnet is already up-to-date!
+[nltk_data] Downloading package sentiwordnet to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Package sentiwordnet is already up-to-date!
+[nltk_data] Downloading package vader_lexicon to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Package vader_lexicon is already up-to-date!
+============ Job Information ===================================================
+Submitted: 2025-09-09T01:41:28
+Started: 2025-09-09T01:42:48
+Ended: 2025-09-09T01:44:27
+Elapsed: 2 min, Limit: 720 min, Difference: 718 min
+CPUs: 192, Nodes: 1
+Estimated Consumption: 3.20 core-hours
+================================================================================

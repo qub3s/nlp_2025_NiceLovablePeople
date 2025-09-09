@@ -1,0 +1,93 @@
+================================================================================
+JobID = 10816084
+User = u17479, Account = nhr_ni_dnlpss25_g04
+Partition = standard96, Nodelist = gcn2390
+================================================================================
+bash: cannot set terminal process group (-1): Inappropriate ioctl for device
+bash: no job control in this shell
+bash: check_conda_installed: command not found
+bash: check_conda_env: command not found
+Activating conda environment 'dnlp'...
+dnlp
+Retrieving notices: ...working... done
+Channels:
+ - conda-forge
+ - nvidia
+ - pytorch
+Platform: linux-64
+Collecting package metadata (repodata.json): ...working... done
+Solving environment: ...working... done
+
+
+==> WARNING: A newer version of conda exists. <==
+    current version: 24.3.0
+    latest version: 25.7.0
+
+Please update conda by running
+
+    $ conda update -n base -c conda-forge conda
+
+
+
+## Package Plan ##
+
+  environment location: /user/amon.poenitzsch/u17479/.conda/envs/dnlp
+
+  added / updated specs:
+    - nltk
+
+
+The following packages will be downloaded:
+
+    package                    |            build
+    ---------------------------|-----------------
+    nltk-3.9.1                 |     pyhd8ed1ab_1         1.0 MB  conda-forge
+    openssl-3.5.2              |       h26f9b46_0         3.0 MB  conda-forge
+    ------------------------------------------------------------
+                                           Total:         4.0 MB
+
+The following NEW packages will be INSTALLED:
+
+  click              conda-forge/noarch::click-8.2.1-pyh707e725_0 
+  joblib             conda-forge/noarch::joblib-1.5.2-pyhd8ed1ab_0 
+  nltk               conda-forge/noarch::nltk-3.9.1-pyhd8ed1ab_1 
+
+The following packages will be UPDATED:
+
+  ca-certificates                      2025.7.14-hbd8a1cb_0 --> 2025.8.3-hbd8a1cb_0 
+  certifi                            2025.7.14-pyhd8ed1ab_0 --> 2025.8.3-pyhd8ed1ab_0 
+  openssl                                  3.5.1-h7b32b05_0 --> 3.5.2-h26f9b46_0 
+
+
+
+Downloading and Extracting Packages: ...working... done
+Preparing transaction: ...working... done
+Verifying transaction: ...working... done
+Executing transaction: ...working... done
+[nltk_data] Downloading package punkt to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Unzipping tokenizers/punkt.zip.
+[nltk_data] Downloading package punkt_tab to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Unzipping tokenizers/punkt_tab.zip.
+[nltk_data] Downloading package averaged_perceptron_tagger_eng to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Unzipping taggers/averaged_perceptron_tagger_eng.zip.
+[nltk_data] Downloading package averaged_perceptron_tagger to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Unzipping taggers/averaged_perceptron_tagger.zip.
+[nltk_data] Downloading package wordnet to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data] Downloading package sentiwordnet to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+[nltk_data]   Unzipping corpora/sentiwordnet.zip.
+[nltk_data] Downloading package vader_lexicon to
+[nltk_data]     /user/amon.poenitzsch/u17479/nltk_data...
+============ Job Information ===================================================
+Submitted: 2025-09-08T21:20:53
+Started: 2025-09-08T21:22:14
+Ended: 2025-09-08T21:26:19
+Elapsed: 5 min, Limit: 720 min, Difference: 715 min
+CPUs: 192, Nodes: 1
+Estimated Consumption: 8.00 core-hours
+================================================================================

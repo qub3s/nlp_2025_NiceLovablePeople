@@ -1,0 +1,77 @@
+================================================================================
+JobID = 10816087
+User = u17479, Account = nhr_ni_dnlpss25_g04
+Partition = standard96, Nodelist = gcn2424
+================================================================================
+bash: cannot set terminal process group (-1): Inappropriate ioctl for device
+bash: no job control in this shell
+bash: check_conda_installed: command not found
+bash: check_conda_env: command not found
+Activating conda environment 'dnlp'...
+dnlp
+Channels:
+ - conda-forge
+ - nvidia
+ - pytorch
+Platform: linux-64
+Collecting package metadata (repodata.json): ...working... done
+Solving environment: ...working... done
+
+
+==> WARNING: A newer version of conda exists. <==
+    current version: 24.3.0
+    latest version: 25.7.0
+
+Please update conda by running
+
+    $ conda update -n base -c conda-forge conda
+
+
+
+InvalidArchiveError("Error with archive /user/amon.poenitzsch/u17479/.conda/pkgs/nltk-3.9.1-pyhd8ed1ab_1.conda.  You probably need to delete and re-download or re-create this file.  Message was:\n\nfailed with error: [Errno 2] No such file or directory: '/mnt/vast-nhr/home/amon.poenitzsch/u17479/.conda/pkgs/nltk-3.9.1-pyhd8ed1ab_1/site-packages/nltk/misc/sort.py'")
+
+
+## Package Plan ##
+
+  environment location: /user/amon.poenitzsch/u17479/.conda/envs/dnlp
+
+  added / updated specs:
+    - nltk
+
+
+The following packages will be downloaded:
+
+    package                    |            build
+    ---------------------------|-----------------
+    ca-certificates-2025.8.3   |       hbd8a1cb_0         151 KB  conda-forge
+    certifi-2025.8.3           |     pyhd8ed1ab_0         155 KB  conda-forge
+    click-8.2.1                |     pyh707e725_0          86 KB  conda-forge
+    joblib-1.5.2               |     pyhd8ed1ab_0         219 KB  conda-forge
+    nltk-3.9.1                 |     pyhd8ed1ab_1         1.0 MB  conda-forge
+    openssl-3.5.2              |       h26f9b46_0         3.0 MB  conda-forge
+    ------------------------------------------------------------
+                                           Total:         4.6 MB
+
+The following NEW packages will be INSTALLED:
+
+  click              conda-forge/noarch::click-8.2.1-pyh707e725_0 
+  joblib             conda-forge/noarch::joblib-1.5.2-pyhd8ed1ab_0 
+  nltk               conda-forge/noarch::nltk-3.9.1-pyhd8ed1ab_1 
+
+The following packages will be UPDATED:
+
+  ca-certificates                      2025.7.14-hbd8a1cb_0 --> 2025.8.3-hbd8a1cb_0 
+  certifi                            2025.7.14-pyhd8ed1ab_0 --> 2025.8.3-pyhd8ed1ab_0 
+  openssl                                  3.5.1-h7b32b05_0 --> 3.5.2-h26f9b46_0 
+
+
+
+Downloading and Extracting Packages: ...working... done
+============ Job Information ===================================================
+Submitted: 2025-09-08T21:21:23
+Started: 2025-09-08T21:22:14
+Ended: 2025-09-08T21:24:28
+Elapsed: 3 min, Limit: 720 min, Difference: 717 min
+CPUs: 192, Nodes: 1
+Estimated Consumption: 4.80 core-hours
+================================================================================
