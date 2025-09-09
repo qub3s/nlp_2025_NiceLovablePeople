@@ -454,10 +454,8 @@ def finetune_paraphrase_detection(args, iter_x, name):
 if __name__ == "__main__":
     args = get_args()
 
-    name = "optim_seed"
+    name = "optim"
     print(name)
-    x = 1
     
-    print("Start: ", x)
     seed_everything(args.seed)
-    finetune_paraphrase_detection(args, x, name)
+    finetune_paraphrase_detection(args, 0, name)
