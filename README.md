@@ -475,27 +475,26 @@ The final combined model achieved a peak development accuracy of **0.887**. Whi
   The main objective of this project was to improve an existing paraphrase detection model. Starting from an initial baseline accuracy of **0.870**, a hyperparameter tuning process (increasing epochs and lowering the learning rate) established an improved baseline of **0.883**. The goal was to surpass this new benchmark through new architectural and methodological.
 
 
-### Promising Approaches
+### Approaches
 
 Two approaches had a positive impact on the model's performance. The first was the implementation of a **Multi-layer Perceptron Classifier**, which replaced the original model's simple linear layer with a deeper, non-linear structure. This change made it possible for the model to recognize more complex patterns, leading to an accuracy of **0.886**. This approach was successful because a more complex classification layer was better capture the relationships between sentence embeddings.
 
 The second successful approach was **Mean Pooling**, which proved to be the most effective pooling strategy. Unlike the [CLS] token, which is primarily pre-trained for next-sentence prediction, Mean Pooling captured a representation of the entire sentence by averaging all token embeddings. This method also achieved an accuracy of **0.886**, suggesting that the overall meaning of a sentence is more critical for paraphrase detection than the features of a single token.
 
 
-### Unexpected Setbacks
+### Setbacks
 
 Other experiments led to a decrease in model performance. The **Bi-Encoder approach**, which processed the sentences separately, resulted in a significant drop in accuracy to **0.803**. The hypothesis is that this approach lost the crucial contextual interaction between the sentences that the original single-sequence BERT input provided. Although bi-encoder networks are often effective, in this specific case, direct inter-sentence context appears to be important for performance.
 
 The addition of a **Contrastive Loss** was also disappointing. The goal was to bring the embeddings of similar sentences closer together, but instead, accuracy dropped to **0.826**. 
 
 
-### The Challenge of Combination
+### Combination
 
 Interestingly, the performance of **Hierarchical Pooling**, which combined the [CLS] token and Mean Pooling, was **0.882**, slightly worse than Mean Pooling alone. This suggests that combining approaches does not always lead to improvement. It's possible that the two vectors contained redundant information or that the higher dimensionality of the combined vector made subsequent classification more difficult.
 
 A similar issue came up with the **Final Combined Model**, which showed no further improvement over the single best result (pre-training on an external dataset), which also achieved **0.887**. This raises the question if the different improvements were already addressing similar aspects of the problem. For example, the **pre-training** on external data might have already taught the model a robust semantic representation that subsequent architectural changes (like the Multi-layer Perceptron) only yielded marginal gains. The hypothesis is that a strong foundation, such as the one from pre-training, makes finer adjustments less impactful, as the biggest gains have already been achieved.
 
-</details>
   
 
 | Sno. | Experiment                           | Best Dev Accuracy |
@@ -514,6 +513,8 @@ The following figure visualizes the performance of the different model variants 
 
 
 Comparison of Model Performance During Training. This graph displays the Dev accuracy for various model configurations over 6 epochs. Each line represents one of the tested architectures. The red dashed lines indicates the initial baseline accuracy of 0.870 and the self-made baseline.
+
+</details>
 
 ### Semantic Textual Similarity (STS) - Measuring text meaning similarity
 
@@ -628,7 +629,7 @@ In addition, experiments with varying training data sizes revealed a behavior si
 </details>
 
 <h3>Summary of Experiments and literature:</h3>
-</details>
+<details>
 
 | Sno.| Experiment | Best Dev Accuracy |
 |---|--------------|-------------------|
@@ -655,23 +656,25 @@ In addition, experiments with varying training data sizes revealed a behavior si
 Note: The final model reaches a peak dev accuracy of 0.848 when executed from the test function. The best model during training on the dev STS data achieved a score of 0.826. This explains the approximately 2% difference in dev correlation observed in the figures, as the plot uses the dev correlations evaluated during training. This issue also appeared in the Part 01 submission.
 
 **Literature**
-## MultiNLI
-- **Citation**:
-  Williams, A., Nangia, N., & Bowman, S. R. (2018). A Broad-Coverage Challenge Corpus for Sentence Understanding through Inference.
 
-## Sentence-BERT
-- **Citation**:
-  Reimers, N., & Gurevych, I. (2019). Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks.
-
-## SimCSE
+### 1. SimCSE
 - **Citation**:
   Gao, T., Yao, X., & Chen, D. (2021). SimCSE: Simple Contrastive Learning of Sentence Embeddings.
 
-## SNLI
+### 2. SNLI
 - **Citation**: 
   Bowman, S. R., Angeli, G., Potts, C., & Manning, C. D. (2015). A Large Annotated Corpus for Learning Natural Language Inference.
+
+### 3. MultiNLI
+- **Citation**:
+  Williams, A., Nangia, N., & Bowman, S. R. (2018). A Broad-Coverage Challenge Corpus for Sentence Understanding through Inference.
+
+### 4. Sentence-BERT
+- **Citation**:
+  Reimers, N., & Gurevych, I. (2019). Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks.
   
  </details>
+
 ### Paraphrase Type Detection (PTD) - Identifying paraphrase types and relationships
 
 ### Paraphrase Type Generation (PTG) - Generating diverse paraphrase types
