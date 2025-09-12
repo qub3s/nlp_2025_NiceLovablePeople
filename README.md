@@ -733,6 +733,7 @@ The parameters remained similar to the ones we used for the previous stage (lr: 
 
 <h3> 3. Is the model not complex enough to solve the problem?</h3>
 <details> 
+  
 **Explanation:** <br>
 The model from the first stage had a single linear layer. First, we wanted to check if additional linear layers might increase performance. The idea was that the model might only classify examples along the "most valuable" boundaries since it only had the ability to use a linear boundary, and thus a model that can differentiate along more complex boundaries might perform better.
 
