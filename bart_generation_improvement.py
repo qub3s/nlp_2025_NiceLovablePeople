@@ -48,7 +48,7 @@ def transform_data(dataset, max_length=256, shuffle=True):
     attention_mask = token["attention_mask"]
 
     # Get DataLoader
-    batch_size = 32 #TODO
+    batch_size = 4 #TODO
     print("Batch Size: ", batch_size)
 
     # If not test set
@@ -97,7 +97,7 @@ def train_with_evaluator(model, train_data, dev_data, device, tokenizer):
     l = 1 #TODO
     lr = 1e-5
     epochs = 1#5  #TODO 
-    optimizer = AdamW(model.parameters(), lr=lr) #lr = 2e-5, eps = 1e-8 is default
+    optimizer = AdamW(model.parameters(), lr=lr) 
     cos_sim = nn.CosineEmbeddingLoss()
     model.to(device)
 
@@ -285,10 +285,10 @@ def train_with_evaluator(model, train_data, dev_data, device, tokenizer):
 def mean_pool(hidden_states, mask):
     # hidden_states: [batch, seq_len, hidden_dim]
     # mask: [batch, seq_len]
-    mask = mask.unsqueeze(-1).expand(hidden_states.size())  # [batch, seq_len, hidden_dim]
-    summed = (hidden_states * mask).sum(1)
-    counts = mask.sum(1).clamp(min=1)  # avoid div by zero
-    return summed / counts
+    input_mask_expanded = mask.unsqueeze(-1).expand(hidden_states.size()).float()
+    sum_embeddings = torch.sum(hidden_states * input_mask_expanded, 1)
+    sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+    return sum_embeddings / sum_mask
 
 def get_l(step, total_steps, l_start=0.7, l_end=0.1):
     # exponential weight decay for l
@@ -307,7 +307,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     lr = 1e-5
     epochs = 100 #TODO 
     total_steps = epochs * len(train_data)  # total optimizer steps
-    optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.01) #lr = 2e-5, eps = 1e-8 is default
+    optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.01) 
     cos_sim = nn.CosineEmbeddingLoss()
     model.to(device)
 
@@ -324,7 +324,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
 
         # Reset variables
         train_loss = 0
-        train_loss_penelised = 0
+        train_loss_penalised = 0
         dev_loss = 0
         dev_loss_penalised = 0
         train_num_batches = 0
@@ -376,7 +376,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             
             # Logging
             train_loss += outputs.loss.detach().float().cpu().item() #todo
-            train_loss_penelised = loss.detach().float().cpu().item()
+            train_loss_penalised += loss.detach().float().cpu().item()
             train_num_batches += 1
 
             #break #TODO
@@ -430,7 +430,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
         epoch_dev_loss = dev_loss / dev_num_batches
         dev_losses.append(epoch_dev_loss)
         train_losses.append(epoch_train_loss)
-        epoch_train_loss_penalised = train_loss_penelised / train_num_batches
+        epoch_train_loss_penalised = train_loss_penalised / train_num_batches
         #epoch_dev_loss_penalised = dev_loss_penalised / dev_num_batches
         #dev_losses_penalised.append(epoch_dev_loss_penalised)
         train_losses_penalised.append(epoch_train_loss_penalised)

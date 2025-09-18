@@ -1,10 +1,10 @@
 # This class has been adopted from the EarlyStopping class by Georg
 
 import numpy as np
-from torch import nn
+import torch
 
 class PGEarlyStopping:
-    def __init__(self, checkpoint_path, patience=10, verbose=False, delta=0):
+    def __init__(self, checkpoint_path, patience=5, verbose=False, delta=0):
         self.patience = patience
         self.verbose = verbose
         self.counter = 0
