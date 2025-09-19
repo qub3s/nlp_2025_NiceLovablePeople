@@ -48,7 +48,7 @@ def transform_data(dataset, max_length=256, shuffle=True):
     attention_mask = token["attention_mask"]
 
     # Get DataLoader
-    batch_size = 4 #TODO
+    batch_size = 32 #TODO
     print("Batch Size: ", batch_size)
 
     # If not test set
@@ -66,219 +66,6 @@ def transform_data(dataset, max_length=256, shuffle=True):
             shuffle = shuffle
         )
     return dataloader
-
-### EVALUATOR AND PENALTY ###
-
-def evaluator(input, prediction, device):
-    """
-    Calculate semantic similarity score for prediction of generator. 
-    Transform it into a loss.
-    Return the loss.
-    """
-    
-    self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-
-    # TODO prepare data for the bert model
-
-    # Prepare data for bert model (evaluator)
-    token = tokenizer(batch, return_tensors="pt", padding=True) 
-    b_input_ids = token["input_ids"]
-    b_attention_mask = token["attention_mask"]
-    # Don't forget to put everything on the device
-
-    return 0
-
-def train_with_evaluator(model, train_data, dev_data, device, tokenizer):
-    """
-    Train the model with the penalty loss and an evaluator. 
-    Return and save the model.
-    """
-
-    l = 1 #TODO
-    lr = 1e-5
-    epochs = 1#5  #TODO 
-    optimizer = AdamW(model.parameters(), lr=lr) 
-    cos_sim = nn.CosineEmbeddingLoss()
-    model.to(device)
-
-    print("Training with Evaluator")
-    print("Epochs: ", epochs)
-    print("Learning Rate: ", lr)
-    
-    # For logging
-    
-    train_losses = []
-    train_penalties = []
-    train_evaluator_losses = []
-    dev_losses = []
-    dev_penalties = []
-    dev_evaluator_losses = []
-
-    # Training loop
-    for epoch in range(epochs):
-
-        # Reset variables
-        train_loss = 0
-        train_penalty = 0
-        train_evaluator_loss = 0
-        dev_loss = 0
-        dev_penalty = 0
-        dev_evaluator_loss = 0
-        train_num_batches = 0
-        dev_num_batches = 0
-
-        # Training
-        model.train()
-        for batch in tqdm(
-                train_data, desc=f"train-{epoch+1:02}", disable=TQDM_DISABLE
-            ):
-            
-            # Reset gradients
-            optimizer.zero_grad()
-
-            # Prepare data (batch = input_sentence)
-            token = tokenizer(batch, return_tensors="pt", padding=True) 
-            b_input_ids = token["input_ids"]
-            b_attention_mask = token["attention_mask"]
-
-            b_input_ids = b_input_ids.to(device)
-            b_attention_mask = b_attention_mask.to(device)
-
-            # Generate output
-            outputs = model.generate(
-                input_ids,
-                attention_mask=attention_mask,
-                max_length=50,
-                num_beams=5,
-                early_stopping=True,
-            )
-
-            # Decode predictions for evaluator
-            pred_text = [
-                tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                for g in outputs
-            ]
-
-            # Call evaluator to get semantic similarity loss
-            evaluator_loss = evaluator(batch, pred_text, device)
-
-            # Prepare predictions for penalty calculation
-            max_length = max(input_for_loss.shape[1], predicted_ids.shape[1])
-
-            # Pad both tensors and transform to floats for CosineEmbeddingLoss
-            padded_batch = F.pad(input_for_loss.float(), (0, max_length-input_for_loss.shape[1]), mode='constant', value=tokenizer.pad_token_id)
-            padded_predicted_ids = F.pad(predicted_ids.float(), (0, max_length-predicted_ids.shape[1]), mode='constant', value=tokenizer.pad_token_id)
-                
-            # Calculate penalty
-            target = torch.full((batch.size(0),), -1.0, device=device)
-            penalty = cos_sim(padded_predicted_ids, padded_batch, target)
-
-            # Calculate penalised loss and optimise model
-            # TODO use l and (1-l) as weights
-            # TODO not sure evaluator score can be used like this. loss could be used as penalty and score as reward? training algorithm?
-            loss = evaluator_loss + penalty 
-            #print("loss:", loss)
-            loss.backward()
-            optimizer.step()
-            # Logging
-            train_loss += loss.detach().float() 
-            train_penalty += penalty.detach().float()
-            train_evaluator_loss += evaluator_loss.detach().float() # TODO detach necessary?
-            train_num_batches += 1
-            break #TODO
-        
-        # Validation
-        model.eval()
-        for batch in tqdm(
-                dev_data, desc=f"dev-{epoch+1:02}", disable=TQDM_DISABLE
-            ):
-            
-            # Prepare data (batch = input_sentence)
-            token = tokenizer(batch, return_tensors="pt", padding=True) 
-            b_input_ids = token["input_ids"]
-            b_attention_mask = token["attention_mask"]
-
-            b_input_ids = b_input_ids.to(device)
-            b_attention_mask = b_attention_mask.to(device)
-
-            # No gradients during validation
-            with torch.no_grad():
-                # Generate output
-                outputs = model.generate(
-                    input_ids,
-                    attention_mask=attention_mask,
-                    max_length=50,
-                    num_beams=5,
-                    early_stopping=True,
-                )
-
-                # Decode predictions for evaluator
-                pred_text = [
-                    tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-                    for g in outputs
-                ]
-                
-                # Call evaluator to get semantic similarity loss
-                evaluator_loss = evaluator(batch, pred_text, device)
-
-                # Prepare predictions for penalty calculation
-                padding = input_for_loss.shape #- predicted_ids.shape.item()
-                padded_predicted_ids = F.pad(predicted_ids, (0, max_length-predicted_ids.shape[1]), mode='constant', value=1)
-                
-                # Calculate penalty
-                target = torch.ones(padding[0]) * -1
-                target = target.to(device)
-                penalty = cos_sim(padded_predicted_ids.to(torch.float32), batch.to(torch.float32), target)
-
-                # Calculate penalised loss
-                loss = evaluator_loss + penalty # ToDO use l and (1-l) as weights
-
-            # Logging
-            dev_loss += loss.detach().float()
-            dev_penalty += penalty.detach().float()
-            dev_evaluator_loss += evaluator_loss.detach().float() # TODO detach necessary?
-            dev_num_batches += 1
-            break #TODO
-        
-        # Log losses
-        epoch_train_loss = train_loss / train_num_batches
-        epoch_train_penalty = train_penalty / train_num_batches
-        epoch_train_evaluator_loss = train_evaluator_loss / train_num_batches
-        epoch_dev_loss = dev_loss / dev_num_batches
-        epoch_dev_penalty = dev_penalty / dev_num_batches
-        epoch_dev_evaluator_loss = dev_evaluator_loss / dev_num_batches
-        
-        train_losses.append(epoch_train_loss)
-        train_penalties.append(epoch_train_penalty)
-        train_evaluator_losses.append(epoch_train_evaluator_loss)
-        dev_losses.append(epoch_dev_loss)
-        dev_penalties.append(epoch_dev_penalty)
-        dev_evaluator_losses.append(epoch_dev_evaluator_loss)
-
-        tqdm.write(f"Epoch {epoch+1}\t Train Loss: {epoch_train_loss:.4f}")
-        tqdm.write(f"Epoch {epoch+1}\t Validation Loss: {epoch_dev_loss:.4f}")
-
-
-    # Plot loss over time
-    epochs_plot = range(1, epochs + 1)
-    plt.plot(epochs_plot, train_losses, 'o', label='Training loss')
-    plt.plot(epochs_plot, dev_losses, 'o', label='Validation loss')
-    plt.plot(epochs_plot, train_penalties, 'o', label='Training penalty')
-    plt.plot(epochs_plot, dev_penalties, 'o', label='Validation penalty')
-    plt.plot(epochs_plot, train_evaluator_losses, 'o', label='Training evaluator loss')
-    plt.plot(epochs_plot, dev_evaluator_losses, 'o', label='Validation evaluator loss')
-    plt.title('Training and validation evaluator loss with penalty')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.savefig("plots/evaluator_losses_plot.png", bbox_inches='tight')
-
-    filepath = f"models/baseline-{epochs}-{lr}-paraphrase_detection_evaluator_loss.pt"
-    torch.save(model, filepath)
-    print(f"Saving the model to {filepath}.")
-
-    return model
-
 
 ### Train without Evaluator ###
 
@@ -312,7 +99,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     model.to(device)
 
     filepath = f"models/finetune-paraphrase_detection-{lr}-"
-    early_stop = PGEarlyStopping(filepath, patience=10, verbose=True, delta=0)
+    early_stop = PGEarlyStopping(filepath, patience=5, verbose=True, delta=0)
 
     dev_losses = []
     train_losses = []
@@ -443,7 +230,9 @@ def train_model(model, train_data, dev_data, device, tokenizer):
         # check for early stopping
         if early_stop(bleu_score, model, epoch):
             break
-            
+    
+    print("LR: ", lr)
+    print("No penalty loss used.")
 
     # Plot loss over time
     epochs_plot = range(1, epochs + 1)
@@ -455,7 +244,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig("plots/losses_plot.png", bbox_inches='tight')
+    plt.savefig("plots/losses_plot_{lr}.png", bbox_inches='tight')
 
     return model
 
