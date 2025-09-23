@@ -21,6 +21,7 @@ from tokenizer import BertTokenizer
 
 
 TQDM_DISABLE = False
+BATCH_SIZE = 32 
 
 
 def transform_data(dataset, max_length=256, shuffle=True):
@@ -48,8 +49,7 @@ def transform_data(dataset, max_length=256, shuffle=True):
     attention_mask = token["attention_mask"]
 
     # Get DataLoader
-    batch_size = 32 #TODO
-    print("Batch Size: ", batch_size)
+    print("Batch Size: ", BATCH_SIZE)
 
     # If not test set
     if ('sentence2' in dataset.keys()):
@@ -62,7 +62,7 @@ def transform_data(dataset, max_length=256, shuffle=True):
     # Combine into a TensorDataset
     dataloader = DataLoader(
             dataset,
-            batch_size = batch_size,
+            batch_size = BATCH_SIZE,
             shuffle = shuffle
         )
     return dataloader
@@ -91,15 +91,15 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     dataloader_train = transform_data(train_data)
     dataloader_dev = transform_data(dev_data)
 
-    lr = 1e-5
+    lr = 3e-5
     epochs = 100 #TODO 
     total_steps = epochs * len(train_data)  # total optimizer steps
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.01) 
     cos_sim = nn.CosineEmbeddingLoss()
     model.to(device)
 
-    filepath = f"models/finetune-paraphrase_detection-{lr}-"
-    early_stop = PGEarlyStopping(filepath, patience=5, verbose=True, delta=0)
+    filepath = f"models/finetune-paraphrase_detection-{lr}-{BATCH_SIZE}-"
+    early_stop = PGEarlyStopping(filepath, patience=10, verbose=True, delta=0)
 
     dev_losses = []
     train_losses = []
@@ -157,7 +157,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
 
             # Calculate penalised loss and optimise model
             l = get_l(train_num_batches, total_steps)
-            loss = outputs.loss #(1-l) * outputs.loss + l * penalty
+            loss = (1-l) * outputs.loss + l * penalty
             loss.backward()
             optimizer.step()
             
@@ -189,24 +189,11 @@ def train_model(model, train_data, dev_data, device, tokenizer):
                     labels=b_labels,
                 )
                 
-                # Prepare predictions for penalty calculation
-                #predicted_ids = outputs.logits.argmax(-1)
-                #padding = input_for_loss.shape #- predicted_ids.shape.item()
-                #print("Padding:", (input_for_loss.shape[1]-predicted_ids.shape[1]))
-                #padded_predicted_ids = F.pad(predicted_ids, (0, max_length-predicted_ids.shape[1]), mode='constant', value=1)
-                
-                # Calculate penalty
-                #cos_sim = nn.CosineEmbeddingLoss()
-                #target = torch.ones(padding[0]) * -1
-                #target = target.to(device)
-                #input_similarity = cos_sim(padded_predicted_ids.to(torch.float32), input_for_loss.to(torch.float32), target)
-                #print("validation Penalty: ", input_similarity)
-                # Calculate penalised loss
-                loss = outputs.loss #+ l * input_similarity
+                # Calculate loss
+                loss = outputs.loss 
             
             # Logging
             dev_loss += outputs.loss.detach().float().cpu().item()
-            #dev_loss_penalised += loss.detach().float()
             dev_num_batches += 1
             #break #TODO
         
@@ -232,7 +219,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             break
     
     print("LR: ", lr)
-    print("No penalty loss used.")
+    print("Penalty loss used.")
 
     # Plot loss over time
     epochs_plot = range(1, epochs + 1)
@@ -244,7 +231,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig("plots/losses_plot_{lr}.png", bbox_inches='tight')
+    plt.savefig(f"plots/losses_plot_{lr}_{BATCH_SIZE}.png", bbox_inches='tight')
 
     return model
 
