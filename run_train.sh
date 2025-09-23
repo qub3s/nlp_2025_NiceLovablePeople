@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=run_all
-#SBATCH -t 00:40:00                  # estimated time # TODO: adapt to your needs
+#SBATCH --job-name=PG_LR_tests
+#SBATCH -t 02:00:00                  # estimated time # TODO: adapt to your needs
 #SBATCH -p grete:shared              # the partition you are training on (i.e., which nodes), for nodes see sinfo -p grete:shared --format=%N,%G
 #SBATCH -G A100:1                    # take 1 GPU, see https://docs.hpc.gwdg.de/compute_partitions/gpu_partitions/index.html for more options
 #SBATCH --mem-per-gpu=8G             # setting the right constraints for the splitted gpu partitions
 #SBATCH --nodes=1                    # total number of nodes
 #SBATCH --ntasks=1                   # total number of tasks
 #SBATCH --cpus-per-task=8            # number cores per task
-#SBATCH --mail-type=all              # send mail when job begins and ends
+#SBATCH --mail-user=e.hagenkort@stud.uni-goettingen.de  
 #SBATCH --output=./slurm_files/slurm-%x-%j.out     # where to write output, %x give job name, %j names job id
 #SBATCH --error=./slurm_files/slurm-%x-%j.err      # where to write slurm error
 
@@ -32,29 +32,10 @@ echo "Latest Commit: $(git rev-parse --short HEAD)"
 echo -e "Uncommitted Changes: $(git status --porcelain | wc -l)\n"
 
 # Run the script:
-# SST
-echo -e "\nStarting SST\n"
-#python -u multitask_classifier.py --use_gpu --option finetune --task sst --hidden_dropout_prob 0.25 --epochs=6
-
-# STS
-echo -e "\nStarting STS\n"
-#python -u multitask_classifier.py --use_gpu --option finetune --task sts --hidden_dropout_prob 0.25 --epochs=10
-
-# QQP
-echo -e "\nStarting QQP\n"
-#python multitask_classifier.py --use_gpu --option finetune --task qqp --hidden_dropout_prob 0.1 --epochs=1
-
-# PTD-Bert
-echo -e "\nStarting PTD-Bert\n"
-#python -u multitask_classifier.py --use_gpu --option finetune --task etpc --hidden_dropout_prob 0.25 --epochs=20 --lr 1e-6 --batch_size 16
-
-# Paraphrase Type Detection
-echo -e "\nStarting PTD\n"
-python bart_detection.py --use_gpu
 
 # Paraphrase Generation
 echo -e "\nStarting PG\n"
-#python -u bart_generation.py --use_gpu
+python -u bart_generation_improvement.py --use_gpu
 
 
 
