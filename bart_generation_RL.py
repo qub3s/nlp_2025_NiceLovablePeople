@@ -83,6 +83,51 @@ class GeneratorEvaluatorRL():
         print("SIMILARITY SCORE: ", similarity_score)
         return similarity_score.detach()
 
+    def sample_sequences_one_forward(self, input_ids, attention_mask, max_length=50):
+        """Sample using a single forward pass with causal masking."""
+        batch_size = input_ids.shape[0]
+        device = input_ids.device
+        
+        # Create initial decoder input (just start tokens)
+        decoder_input_ids = torch.tensor(
+            [self.generator_tokenizer.bos_token_id] * batch_size, 
+            device=device
+        ).unsqueeze(1)
+        
+        all_logits = []
+        all_tokens = [decoder_input_ids]
+        
+        for step in range(max_length - 1):
+            # Forward pass
+            outputs = self.generator(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                decoder_input_ids=decoder_input_ids,
+                return_dict=True
+            )
+            
+            # Get the last token's logits
+            next_token_logits = outputs.logits[:, -1, :]
+            all_logits.append(next_token_logits)
+            
+            # Sample next token (with temperature and top-k)
+            next_token_logits = next_token_logits / 0.8  # temperature
+            probs = F.softmax(next_token_logits, dim=-1)
+            
+            # Top-k sampling
+            top_k_probs, top_k_indices = torch.topk(probs, 50, dim=-1)
+            filtered_probs = top_k_probs / top_k_probs.sum(dim=-1, keepdim=True)
+            next_tokens = torch.multinomial(filtered_probs, num_samples=1)
+            next_tokens = top_k_indices.gather(dim=-1, index=next_tokens)
+            
+            # Update decoder input for next step (only keep last token for efficiency)
+            decoder_input_ids = next_tokens
+            all_tokens.append(next_tokens)
+        
+        # Combine all generated tokens
+        generated_sequences = torch.cat(all_tokens, dim=1)
+        return generated_sequences, all_logits
+
 
     def train(self, dataloader_train, epochs=10, lr=1e-05):
         
@@ -113,32 +158,13 @@ class GeneratorEvaluatorRL():
                 optimizer.zero_grad()
                 
                 # Generate rollouts (sampling)
-                generated_outputs = self.generator.generate(
-                    input_ids=b_input_ids,
-                    attention_mask=b_attention_mask,
-                    max_length=50,
-                    do_sample=True,           # CRITICAL: Must sample for RL
-                    num_return_sequences=1,   # Generate one sequence per input
-                    temperature=0.8,          # Controls randomness (0.7-1.0 is good)
-                    top_k=50,                 # Top-k sampling
-                    pad_token_id=self.generator_tokenizer.pad_token_id,
-                    eos_token_id=self.generator_tokenizer.eos_token_id, 
-                    return_dict_in_generate=True,
-                    output_scores=True,       # Need this for token probabilities
-                    output_hidden_states=True # Need this for penalty if used
-                )
-                
-                # Get the generated token sequences
-                generated_sequences = generated_outputs.sequences  # [batch_size, seq_len]
+                generated_sequences, logits_per_step  = self.sample_sequences_one_forward(b_input_ids, b_attention_mask)
+
+                print(f"Gradients enabled: {all_logits[0].requires_grad}") 
 
                 valid_tokens = (generated_sequences >= 0) & (generated_sequences < self.generator.config.vocab_size)
                 if not valid_tokens.all():
                     print(f"ERROR: {(~valid_tokens).sum().item()} invalid tokens in generated sequences!")
-                
-                # Get token probabilities for REINFORCE
-                # generated_outputs.scores is a tuple of [batch_size, vocab_size] for each generation step
-                logits_per_step = generated_outputs.scores
-                print("THE TRUUUUTH!!!", logits_per_step[0].requires_grad)
                 
                 # Calculate log probability for each generated token
                 log_probs = []
