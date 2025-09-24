@@ -84,49 +84,54 @@ class GeneratorEvaluatorRL():
         return similarity_score.detach()
 
     def sample_sequences_one_forward(self, input_ids, attention_mask, max_length=50):
-        """Sample using a single forward pass with causal masking."""
+        """Sample with gradient flow using autoregressive decoding (no caching)."""
         batch_size = input_ids.shape[0]
         device = input_ids.device
-        
-        # Create initial decoder input (just start tokens)
-        decoder_input_ids = torch.tensor(
-            [self.generator_tokenizer.bos_token_id] * batch_size, 
-            device=device
-        ).unsqueeze(1)
-        
-        all_logits = []
-        all_tokens = [decoder_input_ids]
-        
+
+        # Start with BOS
+        generated = torch.full(
+            (batch_size, 1),
+            self.generator_tokenizer.bos_token_id,
+            dtype=torch.long,
+            device=device,
+        )
+
+        log_probs = []
+
         for step in range(max_length - 1):
-            # Forward pass
             outputs = self.generator(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                decoder_input_ids=decoder_input_ids,
-                return_dict=True
+                decoder_input_ids=generated,
+                return_dict=True,
             )
-            
-            # Get the last token's logits
-            next_token_logits = outputs.logits[:, -1, :]
-            all_logits.append(next_token_logits)
-            
-            # Sample next token (with temperature and top-k)
-            next_token_logits = next_token_logits / 0.8  # temperature
-            probs = F.softmax(next_token_logits, dim=-1)
-            
-            # Top-k sampling
+
+            logits = outputs.logits[:, -1, :] / 0.8  # temperature
+            probs = F.softmax(logits, dim=-1)
+
+            # Top-k filtering
             top_k_probs, top_k_indices = torch.topk(probs, 50, dim=-1)
             filtered_probs = top_k_probs / top_k_probs.sum(dim=-1, keepdim=True)
-            next_tokens = torch.multinomial(filtered_probs, num_samples=1)
+
+            next_tokens = torch.multinomial(filtered_probs, num_samples=1).to(device)
             next_tokens = top_k_indices.gather(dim=-1, index=next_tokens)
-            
-            # Update decoder input for next step (only keep last token for efficiency)
-            decoder_input_ids = next_tokens
-            all_tokens.append(next_tokens)
-        
-        # Combine all generated tokens
-        generated_sequences = torch.cat(all_tokens, dim=1)
-        return generated_sequences, all_logits
+
+            # Save log-prob of sampled tokens
+            step_log_probs = torch.log(
+                probs.gather(-1, next_tokens)
+            ).squeeze(-1)
+            log_probs.append(step_log_probs.to(device))
+
+            # Append token
+            generated = torch.cat([generated, next_tokens], dim=1)
+
+            # Early stop if EOS everywhere
+            if (next_tokens == self.generator_tokenizer.eos_token_id).all():
+                break
+
+        log_probs = torch.stack(log_probs, dim=1)
+        return generated, log_probs
+
 
 
     def train(self, dataloader_train, epochs=10, lr=1e-05):
@@ -157,48 +162,15 @@ class GeneratorEvaluatorRL():
                 # Reset gradients
                 optimizer.zero_grad()
                 
-                # Generate rollouts (sampling)
-                generated_sequences, logits_per_step  = self.sample_sequences_one_forward(b_input_ids, b_attention_mask)
-
-                print(f"Gradients enabled: {all_logits[0].requires_grad}") 
+                # Generate samples
+                generated_sequences, log_probs  = self.sample_sequences_one_forward(b_input_ids, b_attention_mask)
 
                 valid_tokens = (generated_sequences >= 0) & (generated_sequences < self.generator.config.vocab_size)
                 if not valid_tokens.all():
                     print(f"ERROR: {(~valid_tokens).sum().item()} invalid tokens in generated sequences!")
                 
-                # Calculate log probability for each generated token
-                log_probs = []
-                for step, step_logits in enumerate(logits_per_step):
-                    if step + 1 >= generated_sequences.size(1):
-                        break  
-                    # Get the tokens actually generated at this step
-                    tokens_at_this_step = generated_sequences[:, step + 1]  # +1 to skip start token
-                    
-                    # Calculate log probabilities for all tokens at this step
-                    #log_prob = F.log_softmax(step_logits, dim=-1)  # [batch_size, vocab_size]
-                    probs = F.softmax(step_logits, dim=-1)            # [batch, vocab]
-                    probs = probs.clamp(min=1e-12)                    # avoid exact zeros
-                    log_prob = probs.log()
-                    
-                    # Get the log prob of the specific tokens that were chosen
-                    log_prob_chosen = log_prob.gather(dim=-1, index=tokens_at_this_step.unsqueeze(-1)).squeeze(-1)
-                    log_probs.append(log_prob_chosen)
-
-                    if torch.isinf(log_prob_chosen).any():
-                        print(f"WARNING: -inf detected at step {step}")
-                        print(f"Tokens with -inf: {tokens_at_this_step[torch.isinf(log_prob_chosen)]}")
-                        # Check what probabilities these tokens had
-                        problematic_indices = torch.isinf(log_prob_chosen)
-                        problematic_tokens = tokens_at_this_step[problematic_indices]
-                        problematic_logits = step_logits[problematic_indices]
-                        print(f"Problematic tokens: {problematic_tokens}")
-                        print(f"Their logits: {problematic_logits[:, problematic_tokens]}")
-
-                # Stack across sequence length: [batch_size, seq_length]
-                log_probs = torch.stack(log_probs, dim=1)
-                
                 # Create mask for generated tokens (ignore padding)
-                gen_mask = (generated_sequences != self.generator_tokenizer.pad_token_id).int()[:, 1:]  # Remove first token
+                gen_mask = (generated_sequences != self.generator_tokenizer.pad_token_id).int().to(self.device)[:, 1:]  # Remove first token
                 # Ensure mask matches log_probs shape
                 if gen_mask.shape[1] > log_probs.shape[1]:
                     gen_mask = gen_mask[:, :log_probs.shape[1]]
