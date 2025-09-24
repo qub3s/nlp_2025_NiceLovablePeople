@@ -103,15 +103,16 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     dataloader_dev = transform_data(dev_data)
 
     lr = 1e-5
-    epochs = 2#100 #TODO 
+    epochs = 100 #TODO 
     # halfed total optimizer steps as early stopping on average roughly stops at half the time
-    total_steps = epochs * len(train_data) * 0.5 
+    total_steps = epochs * len(train_data) * 0.7 
+    frac = 0.15
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.01) 
     cos_sim = nn.CosineEmbeddingLoss()
     model.to(device)
 
-    filepath = f"models/finetune-paraphrase_generation-{lr}-{BATCH_SIZE}-"
-    early_stop = PGEarlyStopping(filepath, patience=10, verbose=True, delta=0)
+    filepath = f"models/finetune-paraphrase_generation-{lr}-{BATCH_SIZE}-FINAL"
+    early_stop = PGEarlyStopping(filepath, patience=20, verbose=True, delta=0)
 
     dev_losses = []
     train_losses = []
@@ -168,7 +169,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
 
             # Calculate penalised loss and optimise model
             #l = get_l(train_num_batches)
-            l = get_l_warmed_up(step=train_num_batches, total_batches_estimate=total_steps)
+            l = get_l_warmed_up(step=train_num_batches, total_batches_estimate=total_steps, warmup_frac=frac)
             loss = (1-l) * outputs.loss + l * penalty
             loss.backward()
             optimizer.step()
@@ -230,7 +231,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             break
     
     print("LR: ", lr)
-    print("Penalty loss used with warmup l.")
+    print(f"Penalty loss used with warmup l, frac {frac}")
 
     # Plot loss over time
     epochs_plot = range(1, epochs + 1)
@@ -242,14 +243,15 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
-    plt.savefig(f"plots/losses_plot_{lr}_{BATCH_SIZE}.png", bbox_inches='tight')
+    plt.savefig(f"plots/losses_plot_{lr}_{BATCH_SIZE}_{frac}_FINAL.png", bbox_inches='tight')
+    plt.close()
 
     # Plot Bleu Score over time
     plt.plot(epochs_plot, dev_bleu, 'o', label='Validation penalised BLEU score')
     plt.title('Validation penalised BLEU score')
     plt.xlabel('Epochs')
     plt.ylabel('Penalised BLEU score')
-    plt.savefig(f"plots/bleu_plot_{lr}_{BATCH_SIZE}.png", bbox_inches='tight')
+    plt.savefig(f"plots/bleu_plot_{lr}_{BATCH_SIZE}_{frac}_FINAL.png", bbox_inches='tight')
 
     return model
 
