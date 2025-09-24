@@ -38,4 +38,4 @@ class PGEarlyStopping:
     def save_checkpoint(self, bleu_score, model, epoch):
         self.model = model.state_dict()
         self.bleu_score_max = bleu_score
-        self.epoch = epoch
+        self.saved_epoch = epoch
