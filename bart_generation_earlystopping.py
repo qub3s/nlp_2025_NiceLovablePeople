@@ -1,4 +1,4 @@
-# This class has been adopted from the EarlyStopping class by Georg
+# This class has been adopted from the EarlyStopping class by Georg Eckardt
 
 import numpy as np
 import torch
