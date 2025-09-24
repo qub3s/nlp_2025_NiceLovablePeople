@@ -18,6 +18,8 @@ from bart_generation_earlystopping import PGEarlyStopping
 from optimizer import AdamW
 
 from tokenizer import BertTokenizer
+from multitask_classifier import MultitaskBERT
+from bart_generation_RL import GeneratorEvaluatorRL
 
 
 TQDM_DISABLE = False
@@ -77,33 +79,43 @@ def mean_pool(hidden_states, mask):
     sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
     return sum_embeddings / sum_mask
 
-def get_l(step, total_steps, l_start=0.7, l_end=0.1):
+def get_l(step, l_start=0.7, l_end=0.1):
     # exponential weight decay for l
     return l_end + (l_start - l_end) * (0.95 ** step)
+
+def get_l_warmed_up(step, total_batches_estimate, warmup_frac=0.15, l_max=0.7, l_min=0.1):
+    """Step is the current batch number."""
+    warmup_batches = int(total_batches_estimate * warmup_frac)
+    
+    if step < warmup_batches:
+        return l_min + (l_max - l_min) * (step / warmup_batches)
+    else:
+        decay_batches = step - warmup_batches
+        total_decay_batches = total_batches_estimate - warmup_batches
+        return l_max - (l_max - l_min) * min(decay_batches / total_decay_batches, 1.0)    
 
 def train_model(model, train_data, dev_data, device, tokenizer):
     """
     Train the model. Return and save the model.
     """
-    ### TODO
-    #raise NotImplementedError
 
     dataloader_train = transform_data(train_data)
     dataloader_dev = transform_data(dev_data)
 
-    lr = 3e-5
-    epochs = 100 #TODO 
-    total_steps = epochs * len(train_data)  # total optimizer steps
+    lr = 1e-5
+    epochs = 2#100 #TODO 
+    # halfed total optimizer steps as early stopping on average roughly stops at half the time
+    total_steps = epochs * len(train_data) * 0.5 
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.01) 
     cos_sim = nn.CosineEmbeddingLoss()
     model.to(device)
 
-    filepath = f"models/finetune-paraphrase_detection-{lr}-{BATCH_SIZE}-"
+    filepath = f"models/finetune-paraphrase_generation-{lr}-{BATCH_SIZE}-"
     early_stop = PGEarlyStopping(filepath, patience=10, verbose=True, delta=0)
 
     dev_losses = []
     train_losses = []
-    dev_losses_penalised = []
+    dev_bleu = []
     train_losses_penalised = []
 
     # Training loop
@@ -113,7 +125,6 @@ def train_model(model, train_data, dev_data, device, tokenizer):
         train_loss = 0
         train_loss_penalised = 0
         dev_loss = 0
-        dev_loss_penalised = 0
         train_num_batches = 0
         dev_num_batches = 0
 
@@ -156,7 +167,8 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             penalty = cos_sim(output_embeds, input_embeds, target)
 
             # Calculate penalised loss and optimise model
-            l = get_l(train_num_batches, total_steps)
+            #l = get_l(train_num_batches)
+            l = get_l_warmed_up(step=train_num_batches, total_batches_estimate=total_steps)
             loss = (1-l) * outputs.loss + l * penalty
             loss.backward()
             optimizer.step()
@@ -205,8 +217,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
         dev_losses.append(epoch_dev_loss)
         train_losses.append(epoch_train_loss)
         epoch_train_loss_penalised = train_loss_penalised / train_num_batches
-        #epoch_dev_loss_penalised = dev_loss_penalised / dev_num_batches
-        #dev_losses_penalised.append(epoch_dev_loss_penalised)
+        dev_bleu.append(bleu_score)
         train_losses_penalised.append(epoch_train_loss_penalised)
         tqdm.write(f"Epoch {epoch+1}\t Train Loss: {epoch_train_loss:.4f}")
         tqdm.write(f"Epoch {epoch+1}\t Validation Loss: {epoch_dev_loss:.4f}")
@@ -219,7 +230,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
             break
     
     print("LR: ", lr)
-    print("Penalty loss used.")
+    print("Penalty loss used with warmup l.")
 
     # Plot loss over time
     epochs_plot = range(1, epochs + 1)
@@ -232,6 +243,13 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     plt.ylabel('Loss')
     plt.legend()
     plt.savefig(f"plots/losses_plot_{lr}_{BATCH_SIZE}.png", bbox_inches='tight')
+
+    # Plot Bleu Score over time
+    plt.plot(epochs_plot, dev_bleu, 'o', label='Validation penalised BLEU score')
+    plt.title('Validation penalised BLEU score')
+    plt.xlabel('Epochs')
+    plt.ylabel('Penalised BLEU score')
+    plt.savefig(f"plots/bleu_plot_{lr}_{BATCH_SIZE}.png", bbox_inches='tight')
 
     return model
 
@@ -358,27 +376,33 @@ def finetune_paraphrase_generation(args):
     model.to(device)
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", local_files_only=True)
 
+    # Prepare evaluator for RL
+    #saved_evaluator = torch.load("models/final_sbert_finetune-5-2e-05-sts.pt", map_location=device)
+    #saved_evaluator["model_config"].simcse_model_path = "models/final_sbert_finetune-5-2e-05-sts.pt"
+    #config = saved_evaluator["model_config"]
+    #evaluator = MultitaskBERT(config)
+    #evaluator.load_state_dict(saved_evaluator["model"])
+
+    #evaluator_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", local_files_only=True)
+
+    # Prepare data
     train_dataset = pd.read_csv("data/etpc-paraphrase-train.csv")
     test_dataset = pd.read_csv("data/etpc-paraphrase-generation-test-student.csv")
 
     # You might do a split of the train data into train/validation set here
     train_dataset, dev_dataset = sklearn.model_selection.train_test_split(train_dataset, test_size=0.2)
 
-    #train_data = transform_data(train_dataset)
-    #dev_data = transform_data(dev_dataset) 
     test_data = transform_data(test_dataset, shuffle=False)
 
     print(f"Loaded {len(train_dataset)} ETPC training samples.")
 
-    # TODO load new dataset
-    # only need input sentence for this
-    #train_dataset_NAME = []
-    #dev_dataset_NAME = []
-    #print(f"Loaded {len(train_dataset_NAME)} NAME training samples.") #todo
+    dataloader_train_RL = transform_data(train_dataset, shuffle=True)
 
-    #model = train_with_evaluator(model, train_data_NAME, dev_data_NAME, device, tokenizer)
+    # Train RL
+    #trainer_RL = GeneratorEvaluatorRL(model, tokenizer, evaluator, evaluator_tokenizer, device)
+    #model = trainer_RL.train(dataloader_train=dataloader_train_RL, epochs=10, lr=1e-5) # TODO add DEV
 
-    print("Training with Evaluator finished.")
+    #print("Training with Evaluator finished.")
 
     model = train_model(model, train_dataset, dev_dataset, device, tokenizer)
 
