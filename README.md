@@ -1085,7 +1085,7 @@ Set up for final run:
 - _l_: warm up strategy with frac 0.15
 
 **Results**
-It achieved the highest score in epoch 54 with a penalised BLEU score of 25.4342. The base BLEU score is 44.3488 and the negative BLEU score 29.8221.
+It achieved the highest score in epoch 54 with a penalised BLEU score of 25.4342. The base BLEU score is 44.3488 and the negative BLEU score 29.8221. Overfitting with the validation loss still remains a problem, which can also be seen in the plots below.
 
 </details>
 
