@@ -234,7 +234,7 @@ def train_model(model, train_data, dev_data, device, tokenizer):
     print(f"Penalty loss used with warmup l, frac {frac}")
 
     # Plot loss over time
-    epochs_plot = range(1, epochs + 1)
+    epochs_plot = range(1, len(train_losses) + 1)
     plt.plot(epochs_plot, train_losses, 'o', label='Training loss')
     plt.plot(epochs_plot, dev_losses, 'o', label='Validation loss')
     plt.plot(epochs_plot, train_losses_penalised, 'o', label='Training loss penalised')
@@ -424,3 +424,4 @@ if __name__ == "__main__":
     args = get_args()
     seed_everything(args.seed)
     finetune_paraphrase_generation(args)
+
